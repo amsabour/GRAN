@@ -55,6 +55,8 @@ class GRANData(object):
         else:
             self.file_names = glob.glob(os.path.join(self.save_path, '*.p'))
 
+        print("Done")
+
     def _get_graph_data(self, G):
         node_degree_list = [(n, d) for n, d in G.degree()]
 
@@ -144,6 +146,8 @@ class GRANData(object):
         K = self.block_size
         N = self.max_num_nodes
         S = self.stride
+
+
 
         # load graph
         adj_list = pickle.load(open(self.file_names[index], 'rb'))
