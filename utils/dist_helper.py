@@ -136,7 +136,8 @@ def disc(samples1, samples2, kernel, is_parallel=True, *args, **kwargs):
             ]):
                 d += dist
 
-    d /= len(samples1) * len(samples2)
+    if len(samples1) * len(samples2) != 0:
+        d /= len(samples1) * len(samples2)
     return d
 
 

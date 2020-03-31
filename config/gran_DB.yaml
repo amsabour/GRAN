@@ -56,7 +56,7 @@ train:
 test:  
   batch_size: 1
   num_workers: 0
-  num_test_gen: 9 # number of generated samples  
+  num_test_gen: 9 # number of generated samples
   is_vis: true
   is_single_plot: false # visualize `num_vis` samples in a single image
   is_test_ER: false # test Erdos-Renyi baseline
