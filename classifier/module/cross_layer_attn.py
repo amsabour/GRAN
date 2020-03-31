@@ -6,7 +6,7 @@ import math
 import sys
 
 sys.path.append("..")
-import utils.tensorboard_writer as tw
+import classifier.utils.tensorboard_writer as tw
 
 class CrossLayerAttn(torch.nn.Module):
 

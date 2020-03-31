@@ -15,7 +15,7 @@ from .cross_layer_attn import CrossLayerAttn
 import sys
 
 sys.path.append("..")
-import utils.tensorboard_writer as tw
+import classifier.utils.tensorboard_writer as tw
 
 EPS = 1e-15
 

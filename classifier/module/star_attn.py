@@ -8,7 +8,7 @@ from torch_geometric.utils import add_self_loops, softmax
 from torch_geometric.utils import scatter_
 
 sys.path.append("..")
-import utils.tensorboard_writer as tw
+import classifier.utils.tensorboard_writer as tw
 
 
 class StarAttn(nn.Module):
