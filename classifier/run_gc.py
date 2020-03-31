@@ -3,11 +3,11 @@ from torch_geometric.data import DataLoader
 from torch_geometric.datasets import TUDataset
 import os.path as osp
 
-import classifier.trainer
+import classifier.trainer as trainer
 import time
 
 import ssl
-import utils.gsn_argparse as gap
+import classifier.utils.gsn_argparse as gap
 import numpy as np
 
 ssl._create_default_https_context = ssl._create_unverified_context

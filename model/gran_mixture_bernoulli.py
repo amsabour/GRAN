@@ -6,6 +6,8 @@ import torch.nn.functional as F
 import numpy as np
 import networkx as nx
 
+from classifier.module.graph_star import GraphStar
+
 EPS = np.finfo(np.float32).eps
 
 __all__ = ['GRANMixtureBernoulli']
@@ -205,6 +207,21 @@ class GRANMixtureBernoulli(nn.Module):
         pos_weight = torch.ones([1]) * self.edge_weight
         self.adj_loss_func = nn.BCEWithLogitsLoss(
             pos_weight=pos_weight, reduction='none')
+
+        self.classifier = GraphStar(num_features=1, num_node_class=0,
+                                    num_graph_class=2, hid=512, num_star=1,
+                                    star_init_method="attn", link_prediction=False,
+                                    heads=4, cross_star=False, num_layers=3,
+                                    cross_layer=False, dropout=0.2, coef_dropout=0.2,
+                                    residual=False,
+                                    residual_star=False, layer_norm=True, activation=F.elu,
+                                    layer_norm_star=True, use_e=False, num_relations=1,
+                                    one_hot_node=False, one_hot_node_num=0,
+                                    relation_score_function="DistMult",
+                                    additional_self_loop_relation_type=True,
+                                    additional_node_to_star_relation_type=True)
+        self.classifier.train()
+
 
     def _inference(self,
                    A_pad=None,
@@ -512,9 +529,7 @@ class GRANMixtureBernoulli(nn.Module):
             ############ We can create an extra block like so #####################
             new_elements = (att_idx == 1).nonzero().squeeze()
             iis = node_idx_feat[new_elements - 1].cpu()
-            generated_A = self.generate_one_block(A_pad[:, 0], iis)[0, :iis + 1, :iis + 1]
-
-
+            generated_A = self.generate_one_block(A_pad[:, 0], iis)[0, :iis + 1, :iis + 1][0, :iis, :iis]
             #######################################################################
 
             return adj_loss

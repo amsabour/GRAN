@@ -204,6 +204,10 @@ def trainer(args, DATASET, train_loader, val_loader, test_loader, transductive=F
 
     node_classification = num_node_class > 0
     graph_classification = num_graph_class > 0
+
+    print(num_features, num_node_class, num_graph_class)
+    print(args)
+
     model = GraphStar(num_features=num_features, num_node_class=num_node_class,
                       num_graph_class=num_graph_class, hid=args.hidden, num_star=args.num_star,
                       star_init_method=args.star_init_method, link_prediction=link_prediction,
