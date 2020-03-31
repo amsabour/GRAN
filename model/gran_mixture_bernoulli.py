@@ -222,6 +222,8 @@ class GRANMixtureBernoulli(nn.Module):
                                     additional_node_to_star_relation_type=True)
         self.classifier.train()
 
+        print("-" * 30)
+        print("MODEL MADE!!!!!!!!!!!!!!")
 
     def _inference(self,
                    A_pad=None,
@@ -529,8 +531,22 @@ class GRANMixtureBernoulli(nn.Module):
             ############ We can create an extra block like so #####################
             new_elements = (att_idx == 1).nonzero().squeeze()
             iis = node_idx_feat[new_elements - 1].cpu()
-            generated_A = self.generate_one_block(A_pad[:, 0], iis)[0, :iis + 1, :iis + 1][0, :iis, :iis]
+            generated_A = self.generate_one_block(A_pad[:, 0], iis)[0, :iis + 1, :iis + 1]
+
+            lower_part = torch.tril(generated_A, diagonal=-1)
+            x = torch.zeros((iis + 1, 1)).to('cuda')
+            edge_mask = (lower_part != 0).to('cuda')
+            edge_index = edge_mask.nonzero().transpose(0, 1).to('cuda')
+            edge_attr = torch.masked_select(lower_part, edge_mask).to('cuda')
+            batch = torch.zeros(iis + 1).long().to('cuda')
+
+            logits_node, logits_star, logits_lp = \
+                self.classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=edge_attr)
+
+            loss = self.classifier.gc_loss(logits_star, torch.tensor([0], device='cuda'))
             #######################################################################
+
+            adj_loss = adj_loss + loss
 
             return adj_loss
         else:
