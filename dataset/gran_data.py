@@ -140,7 +140,7 @@ class GRANData(object):
 
         # print('number of nodes = {}'.format(adj_0.shape[0]))
 
-        return adj_list
+        return (adj_list, G.graph['label'])
 
     def __getitem__(self, index):
         K = self.block_size
@@ -150,7 +150,7 @@ class GRANData(object):
 
 
         # load graph
-        adj_list = pickle.load(open(self.file_names[index], 'rb'))
+        adj_list, graph_label = pickle.load(open(self.file_names[index], 'rb'))
         num_nodes = adj_list[0].shape[0]
         num_subgraphs = int(np.floor((num_nodes - K) / S) + 1)
 
@@ -280,6 +280,7 @@ class GRANData(object):
             data['num_nodes'] = num_nodes
             data['subgraph_size'] = subgraph_size
             data['num_count'] = sum(subgraph_size)
+            data['graph_label'] = graph_label
             data_batch += [data]
 
         end_time = time.time()
@@ -359,6 +360,9 @@ class GRANData(object):
                     bb['subgraph_idx'] + subgraph_idx_base[ii]
                     for ii, bb in enumerate(batch_pass)
                 ])).long()
+
+            data['graph_label'] = torch.from_numpy(
+                np.array([bb['graph_label'] for bb in batch_pass])).float()
 
             batch_data += [data]
 

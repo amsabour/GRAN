@@ -244,6 +244,8 @@ class GranRunner(object):
                             data['att_idx'] = batch_data[dd][ff]['att_idx'].pin_memory().to(gpu_id, non_blocking=True)
                             data['subgraph_idx'] = batch_data[dd][ff]['subgraph_idx'].pin_memory().to(gpu_id,
                                                                                                       non_blocking=True)
+                            data['graph_label'] = batch_data[dd][ff]['graph_label'].pin_memory().to(gpu_id,
+                                                                                                    non_blocking=True)
                             batch_fwd.append((data,))
 
                     if batch_fwd:

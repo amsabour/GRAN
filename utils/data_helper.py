@@ -138,7 +138,7 @@ def graph_load_batch(data_dir,
     for i in range(graph_num):
         # find the nodes for each graph
         nodes = node_list[data_graph_indicator == i + 1]
-        G_sub = G.subgraph(nodes)
+        G_sub = G.subgraph(nodes).copy()
         if graph_labels:
             G_sub.graph['label'] = data_graph_labels[i]
         # print('nodes', G_sub.number_of_nodes())

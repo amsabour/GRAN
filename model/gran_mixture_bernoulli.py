@@ -507,6 +507,7 @@ class GRANMixtureBernoulli(nn.Module):
         label = input_dict['label'] if 'label' in input_dict else None
         num_nodes_pmf = input_dict[
             'num_nodes_pmf'] if 'num_nodes_pmf' in input_dict else None
+        graph_label = input_dict['graph_label'] if 'graph_label' in input_dict else None
 
         N_max = self.max_num_nodes
 
@@ -540,10 +541,11 @@ class GRANMixtureBernoulli(nn.Module):
             edge_attr = torch.masked_select(lower_part, edge_mask).to('cuda')
             batch = torch.zeros(iis + 1).long().to('cuda')
 
+
             logits_node, logits_star, logits_lp = \
                 self.classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=edge_attr)
 
-            loss = self.classifier.gc_loss(logits_star, torch.tensor([0], device='cuda'))
+            loss = self.classifier.gc_loss(logits_star, graph_label)
             #######################################################################
 
             adj_loss = adj_loss + loss
