@@ -47,7 +47,7 @@ def main(_args):
     val_accs = []
     all_gc_accs = []
 
-    for i in range(10):
+    for i in range(1):
         start_time = time.perf_counter()
         dataset, train_loader, val_loader, test_loader = load_data(args.dataset, i)
 
@@ -64,14 +64,14 @@ def main(_args):
         print(" It took: {:2f} minutes to complete one round....".format(spent_time))
         print("\033[1;32m Best graph classification accuracy in {}th round is: {:4f} \033[0m".format((i + 1), val_acc))
 
-    all_gc_accs = np.vstack(all_gc_accs)
-    all_gc_accs = np.mean(all_gc_accs, axis=0)
-    final_gc = np.mean(val_accs)
-    print("\n\n\033[1;32m Average over 10 best results:  {:.4f}  \033[0m".format(final_gc))
-    val_accs = ['{:.4f}'.format(i) for i in val_accs]
-    print(" 10 Best results: ", np.asfarray(val_accs, float))
-    print(" DiffPoll cross val:  {:.4f} ".format(np.max(all_gc_accs)))
-    print(" DiffPoll argmax pos: ", np.argmax(all_gc_accs))
+    # all_gc_accs = np.vstack(all_gc_accs)
+    # all_gc_accs = np.mean(all_gc_accs, axis=0)
+    # final_gc = np.mean(val_accs)
+    # print("\n\n\033[1;32m Average over 10 best results:  {:.4f}  \033[0m".format(final_gc))
+    # val_accs = ['{:.4f}'.format(i) for i in val_accs]
+    # print(" 10 Best results: ", np.asfarray(val_accs, float))
+    # print(" DiffPoll cross val:  {:.4f} ".format(np.max(all_gc_accs)))
+    # print(" DiffPoll argmax pos: ", np.argmax(all_gc_accs))
 
 
 if __name__ == '__main__':
