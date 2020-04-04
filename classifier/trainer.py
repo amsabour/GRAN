@@ -222,19 +222,6 @@ def trainer(args, DATASET, train_loader, val_loader, test_loader, transductive=F
                       additional_self_loop_relation_type=args.additional_self_loop_relation_type,
                       additional_node_to_star_relation_type=args.additional_node_to_star_relation_type)
 
-    model = GraphStar(num_features=1, num_node_class=0,
-                      num_graph_class=2, hid=512, num_star=1,
-                      star_init_method="attn", link_prediction=False,
-                      heads=4, cross_star=False, num_layers=3,
-                      cross_layer=False, dropout=0.2, coef_dropout=0.2,
-                      residual=False,
-                      residual_star=False, layer_norm=True, activation=F.elu,
-                      layer_norm_star=True, use_e=False, num_relations=1,
-                      one_hot_node=False, one_hot_node_num=0,
-                      relation_score_function="DistMult",
-                      additional_self_loop_relation_type=True,
-                      additional_node_to_star_relation_type=True)
-
     model.to(args.device)
 
     if DATASET in ['MR_win10_no_prefeat_no_repeat', 'MR_win10_no_prefeat_repeat', 'R8_win10_no_prefeat_no_repeat',

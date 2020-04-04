@@ -208,7 +208,7 @@ class GRANMixtureBernoulli(nn.Module):
         self.adj_loss_func = nn.BCEWithLogitsLoss(
             pos_weight=pos_weight, reduction='none')
 
-        self.classifier = GraphStar(num_features=1, num_node_class=0,
+        self.classifier = GraphStar(num_features=3, num_node_class=0,
                                     num_graph_class=2, hid=512, num_star=1,
                                     star_init_method="attn", link_prediction=False,
                                     heads=4, cross_star=False, num_layers=3,
@@ -220,6 +220,7 @@ class GRANMixtureBernoulli(nn.Module):
                                     relation_score_function="DistMult",
                                     additional_self_loop_relation_type=True,
                                     additional_node_to_star_relation_type=True)
+        self.classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
         self.classifier.eval()
 
         print("-" * 30)
@@ -556,7 +557,7 @@ class GRANMixtureBernoulli(nn.Module):
             generated_A = self.generate_one_block(A_pad[:, 0], iis, inject_graph_label=True, class_label=graph_label)[0, :iis + 1, :iis + 1]
 
             lower_part = torch.tril(generated_A, diagonal=-1)
-            x = torch.zeros((iis + 1, 1)).to('cuda')
+            x = torch.zeros((iis + 1, 3)).to('cuda')
             edge_mask = (lower_part != 0).to('cuda')
             edge_index = edge_mask.nonzero().transpose(0, 1).to('cuda')
             edge_attr = torch.masked_select(lower_part, edge_mask).to('cuda')
