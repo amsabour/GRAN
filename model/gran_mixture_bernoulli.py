@@ -220,10 +220,13 @@ class GRANMixtureBernoulli(nn.Module):
                                     relation_score_function="DistMult",
                                     additional_self_loop_relation_type=True,
                                     additional_node_to_star_relation_type=True)
-        self.classifier.train()
+        self.classifier.eval()
 
         print("-" * 30)
         print("MODEL MADE!!!!!!!!!!!!!!")
+
+        # Graph class representation
+        self.class_representation = nn.Embedding(2, self.embedding_dim)
 
     def _inference(self,
                    A_pad=None,
@@ -325,7 +328,8 @@ class GRANMixtureBernoulli(nn.Module):
 
         return A
 
-    def generate_one_block(self, A, row, node_state=None, is_sym=True, sample=False):
+    def generate_one_block(self, A, row, node_state=None, is_sym=True, sample=False,
+                           inject_graph_label=False, class_label=None):
         """
         Generate one block of nodes
         :param A: Adjacency matrix of the graph so far
@@ -333,6 +337,8 @@ class GRANMixtureBernoulli(nn.Module):
         :param node_state: State of the graph after the linear transformation
         :param is_sym: Should i symmetricize?
         :param sample: Return bernoulli probabilities or sample using them
+        :param inject_graph_label: Inject the graph class representation into the GNN
+        :param class_label: Graph class must be given if inject_graph_label is True
         """
         B = A.shape[0]
         K = self.block_size  # 1
@@ -376,6 +382,7 @@ class GRANMixtureBernoulli(nn.Module):
                 else:
                     node_state[:, :ii, :] = A[:, ii - S:ii, :N]
 
+        # TODO: What is this padding for???
         node_state_in = F.pad(
             node_state[:, :ii, :], (0, 0, 0, K), 'constant', value=.0)
 
@@ -411,8 +418,20 @@ class GRANMixtureBernoulli(nn.Module):
             att_edge_feat = att_edge_feat.scatter(
                 1, att_idx[[edges[:, 1]]] + self.att_edge_dim, 1)
 
+
+        # An absolute disgusting way of injecting graph_labels
+        node_state_in = node_state_in.view(-1, H)
+        if inject_graph_label:
+            assert class_label is not None
+            class_representation = self.class_representation(class_label)
+            node_state_in = torch.cat([class_representation, node_state_in], dim=0)
+
         node_state_out = self.decoder(
-            node_state_in.view(-1, H), edges, edge_feat=att_edge_feat)
+            node_state_in, edges, edge_feat=att_edge_feat)
+
+        if inject_graph_label:
+            node_state_out = node_state_out[1:]
+
         node_state_out = node_state_out.view(B, jj, -1)
 
         idx_row, idx_col = np.meshgrid(np.arange(ii, jj), np.arange(jj))
@@ -529,10 +548,12 @@ class GRANMixtureBernoulli(nn.Module):
                                               self.adj_loss_func, subgraph_idx)
             adj_loss = adj_loss * float(self.num_canonical_order)
 
+            graph_label = graph_label.long()
+
             ############ We can create an extra block like so #####################
             new_elements = (att_idx == 1).nonzero().squeeze()
             iis = node_idx_feat[new_elements - 1].cpu()
-            generated_A = self.generate_one_block(A_pad[:, 0], iis)[0, :iis + 1, :iis + 1]
+            generated_A = self.generate_one_block(A_pad[:, 0], iis, inject_graph_label=True, class_label=graph_label)[0, :iis + 1, :iis + 1]
 
             lower_part = torch.tril(generated_A, diagonal=-1)
             x = torch.zeros((iis + 1, 1)).to('cuda')
@@ -541,14 +562,13 @@ class GRANMixtureBernoulli(nn.Module):
             edge_attr = torch.masked_select(lower_part, edge_mask).to('cuda')
             batch = torch.zeros(iis + 1).long().to('cuda')
 
-
             logits_node, logits_star, logits_lp = \
                 self.classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=edge_attr)
 
-            loss = self.classifier.gc_loss(logits_star, graph_label.long())
+            loss = self.classifier.gc_loss(logits_star, graph_label)
             #######################################################################
 
-            adj_loss = adj_loss + loss
+            adj_loss += loss
 
             return adj_loss
         else:
