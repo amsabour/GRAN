@@ -140,7 +140,7 @@ class GRANData(object):
 
         # print('number of nodes = {}'.format(adj_0.shape[0]))
 
-        return (adj_list, G.graph['label'])
+        return (adj_list, G.graph['label'] - 1)
 
     def __getitem__(self, index):
         K = self.block_size

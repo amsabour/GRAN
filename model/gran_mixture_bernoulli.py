@@ -545,7 +545,7 @@ class GRANMixtureBernoulli(nn.Module):
             logits_node, logits_star, logits_lp = \
                 self.classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=edge_attr)
 
-            loss = self.classifier.gc_loss(logits_star, graph_label)
+            loss = self.classifier.gc_loss(logits_star, graph_label.long())
             #######################################################################
 
             adj_loss = adj_loss + loss
