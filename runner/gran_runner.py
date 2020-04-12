@@ -18,7 +18,6 @@ from tensorboardX import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
 import torch.utils.data.distributed as distributed
 
-from classifier.module.graph_star import GraphStar
 from model import *
 from dataset import *
 from utils.logger import get_logger
@@ -28,6 +27,10 @@ from utils.eval_helper import *
 from utils.dist_helper import compute_mmd, gaussian_emd, gaussian, emd, gaussian_tv
 from utils.vis_helper import draw_graph_list, draw_graph_list_separate
 from utils.data_parallel import DataParallel
+
+from classifier import *
+from classifier.module import *
+from classifier.module.graph_star import GraphStar
 
 try:
     ###
@@ -263,7 +266,7 @@ class GranRunner(object):
                                                                                                       non_blocking=True)
                             data['graph_label'] = batch_data[dd][ff]['graph_label'].pin_memory().to(gpu_id,
                                                                                                     non_blocking=True)
-                            data['graph_classifier'] = graph_classifier.pin_memory().to(gpu_id, non_blocking=True)
+                            data['graph_classifier'] = graph_classifier.to(gpu_id, non_blocking=True)
 
                             batch_fwd.append((data,))
 
