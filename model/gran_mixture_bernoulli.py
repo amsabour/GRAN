@@ -276,7 +276,7 @@ class GRANMixtureBernoulli(nn.Module):
 
         return log_theta, log_alpha
 
-    def _sampling(self, B):
+    def _sampling(self, B, inject_graph_label=False, class_label=None):
         """ generate adj in row-wise auto-regressive fashion """
 
         K = self.block_size  # 1
@@ -302,7 +302,8 @@ class GRANMixtureBernoulli(nn.Module):
             if jj > N_pad:
                 break
 
-            A = self.generate_one_block(A, ii, node_state=node_state, is_sym=False, sample=True)
+            A = self.generate_one_block(A, ii, node_state=node_state, is_sym=False, sample=True,
+                                        inject_graph_label=inject_graph_label, class_label=class_label)
 
         ### make it symmetric
         if self.is_sym:
@@ -342,12 +343,12 @@ class GRANMixtureBernoulli(nn.Module):
         # Cannot use inline operation (doesn't work with backwards)
 
         if inject_graph_label:
-            new_A = torch.zeros((B, N + 1, N + 1))
+            new_A = torch.zeros((B, N + 1, N + 1)).to(A.device)
 
             new_A[:, 0, :] = 1  # Add one node at the beginning connected to everything (specifies the graph label)
             new_A[:, :, 0] = 1
 
-            new_A[:, 1:ii+1, 1:] = A[:, :ii, :]
+            new_A[:, 1:ii + 1, 1:] = A[:, :ii, :]
             A = new_A
             ii += 1
             jj += 1
@@ -523,10 +524,10 @@ class GRANMixtureBernoulli(nn.Module):
             'subgraph_idx'] if 'subgraph_idx' in input_dict else None
         edges = input_dict['edges'] if 'edges' in input_dict else None
         label = input_dict['label'] if 'label' in input_dict else None
-        num_nodes_pmf = input_dict[
-            'num_nodes_pmf'] if 'num_nodes_pmf' in input_dict else None
+        num_nodes_pmf = input_dict['num_nodes_pmf'] if 'num_nodes_pmf' in input_dict else None
         graph_label = input_dict['graph_label'] if 'graph_label' in input_dict else None
         graph_classifier = input_dict['graph_classifier'] if 'graph_classifier' in input_dict else None
+
         N_max = self.max_num_nodes
 
         torch.autograd.set_detect_anomaly(True)
@@ -573,7 +574,7 @@ class GRANMixtureBernoulli(nn.Module):
             return adj_loss
         else:
             # Samples batch_size graphs of maximum size
-            A = self._sampling(batch_size)
+            A = self._sampling(batch_size, inject_graph_label=(graph_label is None), class_label=graph_label)
 
             # Pick the number of nodes of each graph based on the pmf provided
             num_nodes_pmf = torch.from_numpy(num_nodes_pmf).to(self.device)
