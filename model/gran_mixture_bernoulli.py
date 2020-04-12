@@ -340,10 +340,19 @@ class GRANMixtureBernoulli(nn.Module):
         jj = row + K
 
         # Cannot use inline operation (doesn't work with backwards)
-        new_A = torch.zeros_like(A)
-        new_A[:, :ii, :] = A[:, :ii, :]
-        A = new_A
-        # A[:, ii:, :] = 0
+
+        if inject_graph_label:
+            new_A = torch.zeros((B, N + 1, N + 1))
+            new_A[:, 0, :] = 1  # Add one node at the beginning connected to everything (specifies the graph label)
+            new_A[:, 1:ii + 1, :] = A[:, :ii, :]
+            A = new_A
+            ii += 1
+            jj += 1
+        else:
+            new_A = torch.zeros_like(A)
+            new_A[:, 0, :] = 1  # Add one
+            new_A[:, :ii, :] = A[:, :ii, :]
+            A = new_A
 
         A = torch.tril(A, diagonal=-1)  # Get lower triangle
 
@@ -406,13 +415,18 @@ class GRANMixtureBernoulli(nn.Module):
         if inject_graph_label:
             assert class_label is not None
             class_representation = self.class_representation(class_label)
-            node_state_in = torch.cat([class_representation, node_state_in], dim=0)
+            new_node_state_in = torch.zeros_like(node_state_in)
+            new_node_state_in[0] = class_representation[:]
+            new_node_state_in[1:] = node_state_in[1:]
+            node_state_in = new_node_state_in
 
         node_state_out = self.decoder(
             node_state_in, edges, edge_feat=att_edge_feat)
 
         if inject_graph_label:
             node_state_out = node_state_out[1:]
+            ii -= 1
+            jj -= 1
 
         node_state_out = node_state_out.view(B, jj, -1)
 
