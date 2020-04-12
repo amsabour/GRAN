@@ -431,6 +431,7 @@ class GRANMixtureBernoulli(nn.Module):
             node_state_out = node_state_out[1:]
             ii -= 1
             jj -= 1
+            A = A[:, 1:, 1:]
 
         node_state_out = node_state_out.view(B, jj, -1)
 
