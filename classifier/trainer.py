@@ -2,8 +2,8 @@ import time
 import torch
 import numpy as np
 import os
-import utils.tensorboard_writer as tw
-import utils.gsn_argparse as gap
+import classifier.utils.tensorboard_writer as tw
+import classifier.utils.gsn_argparse as gap
 from classifier.utils.gsn_argparse import tab_printer
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau
