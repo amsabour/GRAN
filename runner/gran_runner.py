@@ -359,7 +359,7 @@ class GranRunner(object):
 
             for ii in tqdm(range(num_test_batch)):
                 with torch.no_grad():
-                    graph_label = np.random.randint(0, 2)
+                    graph_label = torch.randint(0, 2).view((1, 1)).to('cuda').long()
                     start_time = time.time()
                     input_dict = {}
                     input_dict['is_sampling'] = True

@@ -297,7 +297,7 @@ class GRANMixtureBernoulli(nn.Module):
         ### cache node state for speed up
         node_state = torch.zeros(B, N_pad, dim_input).to(self.device)
 
-        for ii in tqdm(range(0, N_pad, S)):
+        for ii in range(0, N_pad, S):
             jj = ii + K
             if jj > N_pad:
                 break
