@@ -18,6 +18,7 @@ from tensorboardX import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
 import torch.utils.data.distributed as distributed
 
+from classifier.module.graph_star import GraphStar
 from model import *
 from dataset import *
 from utils.logger import get_logger
@@ -170,9 +171,25 @@ class GranRunner(object):
 
         # create models
         model = eval(self.model_conf.name)(self.config)
+        # create graph classifier
+        graph_classifier = GraphStar(num_features=3, num_node_class=0,
+                                     num_graph_class=2, hid=512, num_star=1,
+                                     star_init_method="attn", link_prediction=False,
+                                     heads=4, cross_star=False, num_layers=3,
+                                     cross_layer=False, dropout=0.2, coef_dropout=0.2,
+                                     residual=False,
+                                     residual_star=False, layer_norm=True, activation=F.elu,
+                                     layer_norm_star=True, use_e=False, num_relations=1,
+                                     one_hot_node=False, one_hot_node_num=0,
+                                     relation_score_function="DistMult",
+                                     additional_self_loop_relation_type=True,
+                                     additional_node_to_star_relation_type=True)
+        graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
+        graph_classifier.eval()
 
         if self.use_gpu:
             model = DataParallel(model, device_ids=self.gpus).to(self.device)
+            graph_classifier = graph_classifier.to(self.device)
 
         # create optimizer
         params = filter(lambda p: p.requires_grad, model.parameters())
@@ -246,6 +263,8 @@ class GranRunner(object):
                                                                                                       non_blocking=True)
                             data['graph_label'] = batch_data[dd][ff]['graph_label'].pin_memory().to(gpu_id,
                                                                                                     non_blocking=True)
+                            data['graph_classifier'] = graph_classifier.pin_memory().to(gpu_id, non_blocking=True)
+
                             batch_fwd.append((data,))
 
                     if batch_fwd:
