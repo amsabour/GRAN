@@ -347,7 +347,7 @@ class GRANMixtureBernoulli(nn.Module):
             new_A[:, 0, :] = 1  # Add one node at the beginning connected to everything (specifies the graph label)
             new_A[:, :, 0] = 1
 
-            new_A[:, 1:ii+1, :] = A[:, :ii, :]
+            new_A[:, 1:ii+1, 1:] = A[:, :ii, :]
             A = new_A
             ii += 1
             jj += 1
