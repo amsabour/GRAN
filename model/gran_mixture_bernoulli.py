@@ -574,7 +574,7 @@ class GRANMixtureBernoulli(nn.Module):
             return adj_loss
         else:
             # Samples batch_size graphs of maximum size
-            A = self._sampling(batch_size, inject_graph_label=(graph_label is None), class_label=graph_label)
+            A = self._sampling(batch_size, inject_graph_label=(graph_label is not None), class_label=graph_label)
 
             # Pick the number of nodes of each graph based on the pmf provided
             num_nodes_pmf = torch.from_numpy(num_nodes_pmf).to(self.device)
