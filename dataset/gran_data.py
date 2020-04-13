@@ -326,6 +326,10 @@ class GRANData(object):
             idx_base = np.array([0] + [bb['num_count'] for bb in batch_pass])
             idx_base = np.cumsum(idx_base)
 
+            data['batch'] = torch.cat(
+                [torch.tensor([ii] * bb['num_count']).view(1, -1) for ii, bb in enumerate(batch_pass)],
+            dim=1).squeeze().long()
+
             data['edges'] = torch.cat(
                 [bb['edges'] + idx_base[ii] for ii, bb in enumerate(batch_pass)],
                 dim=0)

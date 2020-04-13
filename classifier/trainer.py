@@ -148,36 +148,49 @@ def train_inductive(model, optimizer, loader, device, node_classification, node_
     lp_auc = lp_ap = None
     data_count = 0
     for data in loader:
-        data_count += data.num_graphs
-        num_graphs = data.num_graphs
-        data = data.to(device)
+        num_graphs = 1
+        data_count += 1
 
-        data.x = torch.zeros_like(data.x)
+        data = data[0]
+
+        adj = data['adj'].to(device)
+        edges = data['edges'].to(device)
+        node_idx_gnn = data['node_idx_gnn'].to(device)
+        node_idx_feat = data['node_idx_feat'].to(device)
+        label = data['label'].to(device)
+        att_idx = data['att_idx'].to(device)
+        subgraph_idx = data['subgraph_idx'].to(device)
+        graph_label = data['graph_label'].to(device).long()
+        batch = data['batch'].to(device)
+
+        N = att_idx.shape[0]
+        x = torch.zeros((N, 3)).to(device)
+        edge_index = edges.transpose(0, 1).long()
 
         optimizer.zero_grad()
         star_seed = data.star if hasattr(data, "star") else None
         if mode == "train":
             logits_node, logits_star, logits_lp = \
-                model(data.x, data.edge_index, data.batch, star=star_seed,
-                      edge_type=data.edge_type if hasattr(data, "edge_type") else None,
-                      edge_attr=data.edge_attr if hasattr(data, "edge_attr") else None)
+                model(x, edge_index, batch, star=star_seed,
+                      edge_type=None,
+                      edge_attr=None)
         else:
             with torch.no_grad():
                 logits_node, logits_star, logits_lp = \
-                    model(data.x, data.edge_index, data.batch, star=star_seed,
-                          edge_type=data.edge_type if hasattr(data, "edge_type") else None,
-                          edge_attr=data.edge_attr if hasattr(data, "edge_attr") else None)
+                    model(x, edge_index, batch, star=star_seed,
+                          edge_type=None,
+                          edge_attr=None)
 
         loss = None
         if node_classification:
-            loss_ = model.nc_loss(logits_node, data.y, node_multi_label)
+            loss_ = model.nc_loss(logits_node, graph_label, node_multi_label)
             loss = loss_ if loss is None else loss + loss_
-            node_acc_count += model.nc_test(logits_node, data.y, node_multi_label)
+            node_acc_count += model.nc_test(logits_node, graph_label, node_multi_label)
             total_node += len(logits_node)
         if graph_classification:
-            loss_ = model.gc_loss(logits_star, data.y, graph_multi_label)
+            loss_ = model.gc_loss(logits_star, graph_label, graph_multi_label)
             loss = loss_ if loss is None else loss + loss_
-            graph_acc_count += model.gc_test(logits_star, data.y, node_multi_label)
+            graph_acc_count += model.gc_test(logits_star, graph_label, node_multi_label)
             total_graph += len(logits_star)
 
         total_loss += loss.item() * num_graphs
@@ -339,7 +352,7 @@ def trainer(args, DATASET, train_loader, val_loader, test_loader, transductive=F
             epoch, train_loss, train_str, val_loss, val_str, test_loss, test_str, max_str)
         print("\033[1;32m", DATASET, "\033[0m", log_str)
         # print("use time : %f" % (time.time()-start))
-        if test_graph_acc > best_graph_acc or (epoch > 200 and test_graph_acc > 80):
+        if (test_graph_acc > best_graph_acc) or (epoch > 200 and test_graph_acc > 80):
             best_graph_acc = test_graph_acc
             print("\033[1;32m Best accuracy improved: %s \033[0m" % best_graph_acc)
             torch.save(model.state_dict(), os.path.join("output", DATASET + ".pkl"))

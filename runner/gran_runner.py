@@ -266,6 +266,7 @@ class GranRunner(object):
                                                                                                       non_blocking=True)
                             data['graph_label'] = batch_data[dd][ff]['graph_label'].pin_memory().to(gpu_id,
                                                                                                     non_blocking=True)
+                            data['batch'] = batch_data[dd][ff]['batch'].pin_memory().to(gpu_id, non_blocking=True)
                             data['graph_classifier'] = graph_classifier.to(gpu_id, non_blocking=True)
 
                             batch_fwd.append((data,))
@@ -360,7 +361,7 @@ class GranRunner(object):
 
             for ii in tqdm(range(num_test_batch)):
                 with torch.no_grad():
-                    graph_label = torch.randint(0, 2).to('cuda').long()
+                    graph_label = torch.tensor([np.random.randint(0, 2)]).to('cuda').long()
                     start_time = time.time()
                     input_dict = {}
                     input_dict['is_sampling'] = True
@@ -369,11 +370,11 @@ class GranRunner(object):
                     input_dict['graph_label'] = graph_label
                     A_tmp = torch.cat(model(input_dict), dim=0).to(self.device)
                     lower_part = torch.tril(A_tmp, diagonal=-1)
-                    x = torch.zeros((A_tmp.shape[0], 3))
-                    edge_mask = (lower_part != 0).to('cuda')
-                    edge_index = edge_mask.nonzero().transpose(0, 1).to('cuda')
-                    edge_attr = torch.masked_select(lower_part, edge_mask).to('cuda')
-                    batch = torch.zeros(A_tmp.shape[0]).long().to('cuda')
+                    x = torch.zeros((A_tmp.shape[0], 3)).to(self.device)
+                    edge_mask = (lower_part != 0).to(self.device)
+                    edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device)
+                    edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
+                    batch = torch.zeros(A_tmp.shape[0]).long().to(self.device)
 
                     logits_node, logits_star, logits_lp = \
                         graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=edge_attr)

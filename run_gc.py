@@ -1,4 +1,6 @@
 import sys
+
+import torch
 from torch_geometric.data import DataLoader
 from torch_geometric.datasets import TUDataset
 import os.path as osp
@@ -9,6 +11,11 @@ import time
 import ssl
 import classifier.utils.gsn_argparse as gap
 import numpy as np
+
+from dataset import GRANData
+from utils.arg_helper import parse_arguments, get_config
+from utils.data_helper import *
+from torch.utils.data import Dataset, DataLoader
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -51,7 +58,30 @@ def main(_args):
         start_time = time.perf_counter()
         dataset, train_loader, val_loader, test_loader = load_data(args.dataset, i)
 
-        val_acc, gc_accs = trainer.trainer(args, args.dataset, train_loader, val_loader, test_loader,
+        config = get_config("config/gran_PROTEINS.yaml", is_test=False)
+        ### load graphs
+        graphs = create_graphs(config.dataset.name, data_dir=config.dataset.data_path)
+        graphs_train = graphs[:int(len(graphs) * 0.7)]
+        graphs_test = graphs[int(len(graphs) * 0.7):]
+        train_dataset = GRANData(config, graphs_train, tag='train')
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=200,
+            shuffle=config.train.shuffle,
+            num_workers=config.train.num_workers,
+            collate_fn=train_dataset.collate_fn,
+            drop_last=False)
+
+        test_dataset = GRANData(config, graphs_test, tag='train')
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=200,
+            shuffle=config.train.shuffle,
+            num_workers=config.train.num_workers,
+            collate_fn=test_dataset.collate_fn,
+            drop_last=False)
+
+        val_acc, gc_accs = trainer.trainer(args, args.dataset, train_loader, test_loader, test_loader,
                                            num_features=dataset.num_features,
                                            num_graph_class=dataset.num_classes,
                                            max_epoch=args.epochs,

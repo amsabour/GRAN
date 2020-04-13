@@ -522,6 +522,7 @@ class GRANMixtureBernoulli(nn.Module):
         num_nodes_pmf = input_dict['num_nodes_pmf'] if 'num_nodes_pmf' in input_dict else None
         graph_label = input_dict['graph_label'] if 'graph_label' in input_dict else None
         graph_classifier = input_dict['graph_classifier'] if 'graph_classifier' in input_dict else None
+        batch = input_dict['batch'] if 'batch' in input_dict else None
 
         N_max = self.max_num_nodes
 
@@ -551,22 +552,30 @@ class GRANMixtureBernoulli(nn.Module):
             generated_A = self.generate_one_block(A_pad[:, 0], iis, inject_graph_label=True, class_label=graph_label)[0,
                           :iis + 1, :iis + 1]
 
+            # generated_A = A_pad[0, 0, :iis, :iis]
             lower_part = torch.tril(generated_A, diagonal=-1)
-            x = torch.zeros((iis + 1, 3)).to('cuda')
-            edge_mask = (lower_part != 0).to('cuda')
-            edge_index = edge_mask.nonzero().transpose(0, 1).to('cuda')
-            edge_attr = torch.masked_select(lower_part, edge_mask).to('cuda')
-            batch = torch.zeros(iis + 1).long().to('cuda')
+            x = torch.zeros((iis + 1, 3)).to(self.device)
+            edge_mask = (lower_part != 0).to(self.device)
+            edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device).long()
+            edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
+            batch = torch.zeros(iis + 1).to(self.device).long()
+
+            # N = att_idx.shape[0]
+            # x = torch.zeros((N, 3)).to(self.device)
+            # edge_index = edges.transpose(0, 1).long()
+            # batch = batch.view(-1,).long().to(self.device)
 
             logits_node, logits_star, logits_lp = \
-                graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=edge_attr)
+                graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=None)
 
             loss = graph_classifier.gc_loss(logits_star, graph_label)
+
+            # print("Graph label: %d, Predicted label: %d, GC Loss: %s" % (graph_label, , loss))
             #######################################################################
 
-            adj_loss += loss
+            # adj_loss += loss
 
-            return adj_loss
+            return adj_loss + loss * 0.1
         else:
             # Samples batch_size graphs of maximum size
             A = self._sampling(batch_size, inject_graph_label=(graph_label is not None), class_label=graph_label)

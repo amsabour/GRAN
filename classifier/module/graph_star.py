@@ -126,7 +126,7 @@ class GraphStar(nn.Module):
         else:
             tw.val_steps += 1
         num_node = x.size(0)
-        num_graph = len(torch.bincount(batch))
+        num_graph = batch[-1] + 1
         _edge_index = edge_index
 
         if self.one_hot_node:
@@ -308,7 +308,7 @@ class GraphStar(nn.Module):
         row = torch.arange(start=0, end=x_size, dtype=dtype, device=device)
         b1 = batch * self.num_star + x_size
         for i in range(self.num_star):
-            col = b1 + i
+            col = (b1 + i)
             edge_index = torch.cat([edge_index, torch.stack([row, col], dim=0)], dim=1)
             edge_type = torch.cat([edge_type, edge_type.new_full((x_size,), self.node_to_star_relation_type)])
             if edge_attr is not None:
