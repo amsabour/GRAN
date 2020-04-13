@@ -152,6 +152,8 @@ def train_inductive(model, optimizer, loader, device, node_classification, node_
         num_graphs = data.num_graphs
         data = data.to(device)
 
+        data.x = torch.zeros_like(data.x)
+
         optimizer.zero_grad()
         star_seed = data.star if hasattr(data, "star") else None
         if mode == "train":

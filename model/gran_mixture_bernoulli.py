@@ -341,22 +341,16 @@ class GRANMixtureBernoulli(nn.Module):
         jj = row + K
 
         # Cannot use inline operation (doesn't work with backwards)
+        new_A = torch.zeros_like(A)
+        new_A[:, :ii, :] = A[:, :ii, :]
+        A = new_A
+        # A[:, ii:, :] = 0
 
         if inject_graph_label:
-            new_A = torch.zeros((B, N + 1, N + 1)).to(A.device)
-
-            new_A[:, 0, :] = 1  # Add one node at the beginning connected to everything (specifies the graph label)
-            new_A[:, :, 0] = 1
-
-            new_A[:, 1:ii + 1, 1:] = A[:, :ii, :]
-            A = new_A
+            # Add a node to the beginning which is connected to everything
+            A = F.pad(A, [1, 0, 1, 0], mode='constant', value=1)
             ii += 1
             jj += 1
-        else:
-            new_A = torch.zeros_like(A)
-            new_A[:, 0, :] = 1  # Add one
-            new_A[:, :ii, :] = A[:, :ii, :]
-            A = new_A
 
         A = torch.tril(A, diagonal=-1)  # Get lower triangle
 
