@@ -196,8 +196,8 @@ class GRANMixtureBernoulli(nn.Module):
             self.embedding_dim = self.max_num_nodes
 
         self.decoder = GNN(
-            msg_dim=self.hidden_dim,
-            node_state_dim=self.hidden_dim,
+            msg_dim=self.hidden_dim * 2,
+            node_state_dim=self.hidden_dim * 2,
             edge_feat_dim=2 * self.att_edge_dim,
             num_prop=self.num_GNN_prop,
             num_layer=self.num_GNN_layers,
@@ -263,8 +263,11 @@ class GRANMixtureBernoulli(nn.Module):
         # GNN inference
         # N.B.: node_feat is shared by multiple subgraphs within the same batch
         # This basically turns h_i^0 to h_i^R in the paper
+        node_state_in = node_feat[node_idx_feat]
+        node_state_in = F.pad(node_state_in, [0, self.hidden_dim, 0, 0], mode='constant', value=0.)
+
         node_state = self.decoder(
-            node_feat[node_idx_feat], edges, edge_feat=att_edge_feat)
+            node_state_in, edges, edge_feat=att_edge_feat)[:, :self.hidden_dim]
 
         ### Pairwise predict edges
         diff = node_state[node_idx_gnn[:, 0], :] - node_state[node_idx_gnn[:, 1], :]
@@ -346,12 +349,6 @@ class GRANMixtureBernoulli(nn.Module):
         A = new_A
         # A[:, ii:, :] = 0
 
-        if inject_graph_label:
-            # Add a node to the beginning which is connected to everything
-            A = F.pad(A, [1, 0, 1, 0], mode='constant', value=1)
-            ii += 1
-            jj += 1
-
         A = torch.tril(A, diagonal=-1)  # Get lower triangle
 
         if node_state is None:
@@ -412,22 +409,17 @@ class GRANMixtureBernoulli(nn.Module):
         node_state_in = node_state_in.view(-1, H)
         if inject_graph_label:
             assert class_label is not None
-            class_representation = self.class_representation(class_label)
-            new_node_state_in = torch.zeros_like(node_state_in)
-            new_node_state_in[0] = class_representation[:]
-            new_node_state_in[1:] = node_state_in[1:]
-            node_state_in = new_node_state_in
+            class_representation = self.class_representation(class_label).reshape(-1, self.hidden_dim)
+            node_state_in = torch.cat([node_state_in, class_representation.repeat((node_state_in.shape[0], 1))], dim=1)
+
+        else:
+            node_state_in = F.pad(node_state_in, [0, self.hidden_dim, 0, 0], mode='constant', value=0.)
 
         node_state_out = self.decoder(
             node_state_in, edges, edge_feat=att_edge_feat)
 
-        if inject_graph_label:
-            node_state_out = node_state_out[1:]
-            ii -= 1
-            jj -= 1
-            A = A[:, 1:, 1:]
-
         node_state_out = node_state_out.view(B, jj, -1)
+        node_state_out = node_state_out[:, :, :self.hidden_dim]
 
         idx_row, idx_col = np.meshgrid(np.arange(ii, jj), np.arange(jj))
         idx_row = torch.from_numpy(idx_row.reshape(-1)).long().to(self.device)
