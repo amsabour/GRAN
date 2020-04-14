@@ -56,7 +56,7 @@ def main(_args):
 
     for i in range(1):
         start_time = time.perf_counter()
-        dataset, train_loader, val_loader, test_loader = load_data(args.dataset, i)
+        # dataset, train_loader, val_loader, test_loader = load_data(args.dataset, i)
 
         config = get_config("config/gran_PROTEINS.yaml", is_test=False)
         ### load graphs
@@ -81,9 +81,9 @@ def main(_args):
             collate_fn=test_dataset.collate_fn,
             drop_last=False)
 
-        val_acc, gc_accs = trainer.trainer(args, args.dataset, train_loader, test_loader, test_loader,
-                                           num_features=dataset.num_features,
-                                           num_graph_class=dataset.num_classes,
+        val_acc, gc_accs = trainer.trainer(args, "PROTEINS", train_loader, test_loader, test_loader,
+                                           num_features=3,
+                                           num_graph_class=2,
                                            max_epoch=args.epochs,
                                            node_multi_label=False,
                                            graph_multi_label=False)

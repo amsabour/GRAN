@@ -210,6 +210,8 @@ class GRANMixtureBernoulli(nn.Module):
 
         # Graph class representation
         self.class_representation = nn.Embedding(2, self.embedding_dim)
+        self.correct_preds = 0
+        self.preds = 0
 
     def _inference(self,
                    A_pad=None,
@@ -544,30 +546,45 @@ class GRANMixtureBernoulli(nn.Module):
             generated_A = self.generate_one_block(A_pad[:, 0], iis, inject_graph_label=True, class_label=graph_label)[0,
                           :iis + 1, :iis + 1]
 
-            # generated_A = A_pad[0, 0, :iis, :iis]
+            generated_A = A_pad[0, 0, :iis, :iis]
             lower_part = torch.tril(generated_A, diagonal=-1)
-            x = torch.zeros((iis + 1, 3)).to(self.device)
+            x = torch.ones((iis + 1, 3)).to(self.device)
             edge_mask = (lower_part != 0).to(self.device)
             edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device).long()
             edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
             batch = torch.zeros(iis + 1).to(self.device).long()
 
-            # N = att_idx.shape[0]
-            # x = torch.zeros((N, 3)).to(self.device)
-            # edge_index = edges.transpose(0, 1).long()
-            # batch = batch.view(-1,).long().to(self.device)
-
             logits_node, logits_star, logits_lp = \
                 graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=None)
 
             loss = graph_classifier.gc_loss(logits_star, graph_label)
+            prediction_generated = torch.argmax(F.softmax(logits_star, dim=1), dim=1).cpu().data.numpy()[0]
+
+            N = att_idx.shape[0]
+            x = torch.zeros((N, 3)).to(self.device)
+            edge_index = edges.transpose(0, 1).long()
+            batch = batch.view(-1, ).long().to(self.device)
+
+            logits_node, logits_star, logits_lp = \
+                graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=None)
+
+            prediction_actual = torch.argmax(F.softmax(logits_star, dim=1), dim=1).cpu().data.numpy()[0]
+
+            graph_label = graph_label.cpu().data.numpy()[0]
+
+            self.preds += 1
+            if prediction_generated == graph_label:
+                self.correct_preds += 1
+
+            if self.preds % 10 == 0:
+                print("Classifier accuracy so far: %s" % (self.correct_preds / self.preds))
 
             # print("Graph label: %d, Predicted label: %d, GC Loss: %s" % (graph_label, , loss))
             #######################################################################
 
             # adj_loss += loss
 
-            return adj_loss + loss * 0.1
+            return adj_loss
         else:
             # Samples batch_size graphs of maximum size
             A = self._sampling(batch_size, inject_graph_label=(graph_label is not None), class_label=graph_label)

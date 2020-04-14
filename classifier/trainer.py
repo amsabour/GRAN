@@ -148,9 +148,6 @@ def train_inductive(model, optimizer, loader, device, node_classification, node_
     lp_auc = lp_ap = None
     data_count = 0
     for data in loader:
-        num_graphs = 1
-        data_count += 1
-
         data = data[0]
 
         adj = data['adj'].to(device)
@@ -162,6 +159,9 @@ def train_inductive(model, optimizer, loader, device, node_classification, node_
         subgraph_idx = data['subgraph_idx'].to(device)
         graph_label = data['graph_label'].to(device).long()
         batch = data['batch'].to(device)
+
+        num_graphs = adj.shape[0]
+        data_count += num_graphs
 
         N = att_idx.shape[0]
         x = torch.zeros((N, 3)).to(device)
@@ -352,7 +352,7 @@ def trainer(args, DATASET, train_loader, val_loader, test_loader, transductive=F
             epoch, train_loss, train_str, val_loss, val_str, test_loss, test_str, max_str)
         print("\033[1;32m", DATASET, "\033[0m", log_str)
         # print("use time : %f" % (time.time()-start))
-        if (test_graph_acc > best_graph_acc) or (epoch > 200 and test_graph_acc > 80):
+        if (test_graph_acc > best_graph_acc) or (epoch > 50 and test_graph_acc > 75):
             best_graph_acc = test_graph_acc
             print("\033[1;32m Best accuracy improved: %s \033[0m" % best_graph_acc)
             torch.save(model.state_dict(), os.path.join("output", DATASET + ".pkl"))
