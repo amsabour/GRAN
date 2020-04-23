@@ -105,7 +105,7 @@ class GranRunner(object):
         self.vis_num_row = config.test.vis_num_row
         self.is_single_plot = config.test.is_single_plot
         self.num_gpus = len(self.gpus)
-        self.is_shuffle = False
+        self.is_shuffle = True # Why the hell would this be turned off?
 
         assert self.use_gpu == True
 

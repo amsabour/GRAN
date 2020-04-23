@@ -547,20 +547,20 @@ class GRANMixtureBernoulli(nn.Module):
             graph_label_num = graph_label.cpu().data.numpy()[0]
 
             gamma = 0.9
-            loss = torch.zeros((1,))
+            loss = torch.zeros((1,)).to(self.device)
             count = 0
             for i in range(10, iis, 10):
                 count += 1
                 i_tensor = torch.tensor([i]).long()
-                generated_A = self.generate_one_block(A_pad[:, 0], i_tensor, inject_graph_label=True,
-                                                      class_label=graph_label)[0, :i_tensor + 1, :i_tensor + 1]
+                generated_A = self.generate_one_block(A_pad[:, 0], i, inject_graph_label=True,
+                                                      class_label=graph_label)[0, :i + 1, :i + 1]
 
                 lower_part = torch.tril(generated_A, diagonal=-1)
-                x = torch.ones((iis + 1, 3)).to(self.device)
+                x = torch.ones((i + 1, 3)).to(self.device)
                 edge_mask = (lower_part != 0).to(self.device)
                 edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device).long()
                 edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
-                batch = torch.zeros(iis + 1).to(self.device).long()
+                batch = torch.zeros(i + 1).to(self.device).long()
 
                 logits_node, logits_star, logits_lp = \
                     graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=None)
