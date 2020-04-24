@@ -549,7 +549,7 @@ class GRANMixtureBernoulli(nn.Module):
             gamma = 0.9
             loss = torch.zeros((1,)).to(self.device)
             count = 0
-            for i in range(10, iis, 10):
+            for i in range(iis - 1, iis, 10):
                 count += 1
                 i_tensor = torch.tensor([i]).long()
                 generated_A = self.generate_one_block(A_pad[:, 0], i, inject_graph_label=True,
@@ -575,7 +575,6 @@ class GRANMixtureBernoulli(nn.Module):
 
                 if self.preds % 100 == 0:
                     print("Classifier accuracy so far: %s" % (self.correct_preds / self.preds))
-
 
             # print("Graph label: %d, Predicted label: %d, GC Loss: %s" % (graph_label, , loss))
             #######################################################################

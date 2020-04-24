@@ -352,8 +352,8 @@ def trainer(args, DATASET, train_loader, val_loader, test_loader, transductive=F
             epoch, train_loss, train_str, val_loss, val_str, test_loss, test_str, max_str)
         print("\033[1;32m", DATASET, "\033[0m", log_str)
         # print("use time : %f" % (time.time()-start))
-        if (test_graph_acc > best_graph_acc) or (epoch > 50 and test_graph_acc > 0.73):
-            best_graph_acc = test_graph_acc
+        if (test_graph_acc + train_graph_acc > best_graph_acc) or (epoch > 50 and test_graph_acc > 0.73):
+            best_graph_acc = test_graph_acc + train_graph_acc
             print("\033[1;32m Best accuracy improved: %s \033[0m" % best_graph_acc)
             torch.save(model.state_dict(), os.path.join("output", DATASET + ".pkl"))
 
