@@ -6,9 +6,16 @@ import torch.nn.functional as F
 import numpy as np
 import networkx as nx
 
+from classifier.losses import MulticlassClassificationLoss
+
 EPS = np.finfo(np.float32).eps
 
 __all__ = ['GRANMixtureBernoulli']
+
+
+class Bunch:
+    def __init__(self, **kwds):
+        self.__dict__.update(kwds)
 
 
 class GNN(nn.Module):
@@ -208,6 +215,7 @@ class GRANMixtureBernoulli(nn.Module):
 
         # Graph class representation
         self.class_representation = nn.Embedding(2, self.embedding_dim)
+        self.classifier_loss = MulticlassClassificationLoss()
         self.correct_preds = 0
         self.preds = 0
 
@@ -220,6 +228,8 @@ class GRANMixtureBernoulli(nn.Module):
             nn.Linear(self.hidden_dim, self.config.dataset.num_node_label))
         self.node_label_loss = nn.CrossEntropyLoss()
         self.count = 0
+        self.correct = 0
+
     def _inference(self,
                    A_pad=None,
                    edges=None,
@@ -439,6 +449,7 @@ class GRANMixtureBernoulli(nn.Module):
         diff = diff.view(-1, node_state.shape[2])
         log_theta = self.output_theta(diff)
         log_alpha = self.output_alpha(diff)
+        log_label = self.node_label_predictor(node_state_out)
 
         log_theta = log_theta.view(B, -1, K, self.num_mix_component)  # B * K * (ii+K) * L
         log_theta = log_theta.transpose(1, 2)  # B * (ii+K) * K * L
@@ -446,6 +457,8 @@ class GRANMixtureBernoulli(nn.Module):
         log_alpha = log_alpha.view(B, -1, self.num_mix_component)  # B * K * (ii+K)
         prob_alpha = log_alpha.mean(dim=1).exp()
         alpha = torch.multinomial(prob_alpha, 1).squeeze(dim=1).long()
+
+        label_prob = torch.nn.Softmax(dim=2)(log_label)
 
         prob = []
         for bb in range(B):
@@ -471,7 +484,7 @@ class GRANMixtureBernoulli(nn.Module):
             A = torch.tril(A, diagonal=-1)
             A = A + A.transpose(1, 2)
 
-        return A
+        return A, label_prob
 
     def forward(self, input_dict):
         """
@@ -504,7 +517,7 @@ class GRANMixtureBernoulli(nn.Module):
             num_nodes_pmf: N_max, empirical probability mass function of number of nodes
 
           Returns:
-            loss                        if training
+            conditional_loss                        if training
             list of adjacency matrices  else
         """
         is_sampling = input_dict[
@@ -524,7 +537,7 @@ class GRANMixtureBernoulli(nn.Module):
         num_nodes_pmf = input_dict['num_nodes_pmf'] if 'num_nodes_pmf' in input_dict else None
         graph_label = input_dict['graph_label'] if 'graph_label' in input_dict else None
         node_label = input_dict['node_label'] if 'node_label' in input_dict else None
-        # graph_classifier = input_dict['graph_classifier'] if 'graph_classifier' in input_dict else None
+        graph_classifier = input_dict['graph_classifier'] if 'graph_classifier' in input_dict else None
         batch = input_dict['batch'] if 'batch' in input_dict else None
 
         N_max = self.max_num_nodes
@@ -533,7 +546,7 @@ class GRANMixtureBernoulli(nn.Module):
         if not is_sampling:
             B, _, N, _ = A_pad.shape
 
-            ### compute adj loss
+            ### compute adj conditional_loss
             log_theta, log_alpha, log_label = self._inference(
                 A_pad=A_pad,
                 edges=edges,
@@ -552,41 +565,49 @@ class GRANMixtureBernoulli(nn.Module):
             node_label_predictions = torch.argmax(log_label, dim=1)
             correct = (node_label_predictions == node_label.view(-1)[:n_nodes]).sum().item()
 
-            self.count += 1
-            if self.count % 20 == 0:
-                print("Acc: %s" % (correct / n_nodes))
-                _, counts = torch.unique(node_label_predictions, return_counts=True)
-                print(counts)
-            # graph_label = graph_label.long()
+            self.count += n_nodes
+            self.correct += correct
+
+            if self.count >= 20000:
+                self.count /= 10
+                self.correct /= 10
+
+            if self.count % 400 <= 50:
+                print("Acc: %s" % (self.correct / self.count))
+
+            graph_label = graph_label.long()
 
             ############ We can create an extra block like so #####################
             # new_elements = (att_idx == 1).nonzero().squeeze()
             # iis = node_idx_feat[new_elements - 1].cpu().data.numpy()
             #
-            # graph_label_num = graph_label.cpu().data.numpy()[0]
-            #
-            # gamma = 0.9
-            # loss = torch.zeros((1,)).to(self.device)
-            # count = 0
-            # for i in range(iis - 1, iis, 10):
-            #     count += 1
-            #     i_tensor = torch.tensor([i]).long()
-            #     generated_A = self.generate_one_block(A_pad[:, 0], i, inject_graph_label=True,
-            #                                           class_label=graph_label)[0, :i + 1, :i + 1]
-            #
-            #     lower_part = torch.tril(generated_A, diagonal=-1)
-            #     x = torch.ones((i + 1, 3)).to(self.device)
-            #     edge_mask = (lower_part != 0).to(self.device)
-            #     edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device).long()
-            #     edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
-            #     batch = torch.zeros(i + 1).to(self.device).long()
+            graph_label_num = graph_label.cpu().data.numpy()[0]
 
-            # logits_node, logits_star, logits_lp = \
-            #     graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=None)
+            gamma = 0.9
+            conditional_loss = torch.zeros((1,)).to(self.device)
+            count = 0
+            for i in range(min(5, n_nodes - 1), n_nodes, 5):
+                count += 1
+                generated_A, label_prob = self.generate_one_block(A_pad[:, 0], i, inject_graph_label=True,
+                                                                  class_label=graph_label)
 
-            # loss = gamma * loss + graph_classifier.gc_loss(logits_star, graph_label)
+                generated_A = generated_A[0, :i + 1, 0:i + 1]
+                x = label_prob[0, :i + 1]
 
-            # prediction_generated = torch.argmax(F.softmax(logits_star, dim=1), dim=1).cpu().data.numpy()[0]
+                lower_part = torch.tril(generated_A, diagonal=-1)
+
+                edge_mask = (lower_part != 0).to(self.device)
+                edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device).long()
+                edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
+                batch = torch.zeros(i + 1).to(self.device).long()
+
+                data = Bunch(x=x, edge_index=edge_index, batch=batch, y=graph_label_num)
+
+                output = graph_classifier(data)
+
+                # conditional_loss = gamma * conditional_loss + graph_classifier.gc_loss(logits_star, graph_label)
+
+                # prediction_generated = torch.argmax(F.softmax(logits_star, dim=1), dim=1).cpu().data.numpy()[0]
 
             # self.preds += 1
             # if prediction_generated == graph_label_num:
@@ -595,10 +616,10 @@ class GRANMixtureBernoulli(nn.Module):
             # if self.preds % 100 == 0:
             #     print("Classifier accuracy so far: %s" % (self.correct_preds / self.preds))
 
-            # print("Graph label: %d, Predicted label: %d, GC Loss: %s" % (graph_label, , loss))
+            # print("Graph label: %d, Predicted label: %d, GC Loss: %s" % (graph_label, , conditional_loss))
             #######################################################################
 
-            # adj_loss += loss
+            # adj_loss += conditional_loss
 
             return adj_loss + node_label_loss
         else:

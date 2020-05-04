@@ -28,6 +28,8 @@ from utils.dist_helper import compute_mmd, gaussian_emd, gaussian, emd, gaussian
 from utils.vis_helper import draw_graph_list, draw_graph_list_separate
 from utils.data_parallel import DataParallel
 
+from classifier.GraphSAGE import GraphSAGE
+
 try:
     ###
     # workaround for solving the issue of multi-worker
@@ -171,25 +173,13 @@ class GranRunner(object):
         # create models
         model = eval(self.model_conf.name)(self.config)
         # create graph classifier
-        # graph_classifier = GraphStar(num_features=3, num_node_class=0,
-        #                              num_graph_class=2, hid=512, num_star=1,
-        #                              star_init_method="attn", link_prediction=False,
-        #                              heads=4, cross_star=False, num_layers=3,
-        #                              cross_layer=False, dropout=0.2, coef_dropout=0.2,
-        #                              residual=False,
-        #                              residual_star=False, layer_norm=True, activation=F.elu,
-        #                              layer_norm_star=True, use_e=False, num_relations=1,
-        #                              one_hot_node=False, one_hot_node_num=0,
-        #                              relation_score_function="DistMult",
-        #                              additional_self_loop_relation_type=True,
-        #                              additional_node_to_star_relation_type=True)
-        # graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
-        # graph_classifier.eval()
-        graph_classifier = None
+        graph_classifier = GraphSAGE(3, 2, 3, 32, 'add')
+        graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
+        graph_classifier.eval()
 
         if self.use_gpu:
             model = DataParallel(model, device_ids=self.gpus).to(self.device)
-            # graph_classifier = graph_classifier.to(self.device)
+            graph_classifier = graph_classifier.to(self.device)
 
         # create optimizer
         params = filter(lambda p: p.requires_grad, model.parameters())
@@ -264,8 +254,9 @@ class GranRunner(object):
                             data['graph_label'] = batch_data[dd][ff]['graph_label'].pin_memory().to(gpu_id,
                                                                                                     non_blocking=True)
                             data['batch'] = batch_data[dd][ff]['batch'].pin_memory().to(gpu_id, non_blocking=True)
-                            data['node_label'] = batch_data[dd][ff]['node_label'].pin_memory().to(gpu_id, non_blocking=True)
-                            # data['graph_classifier'] = graph_classifier.to(gpu_id, non_blocking=True)
+                            data['node_label'] = batch_data[dd][ff]['node_label'].pin_memory().to(gpu_id,
+                                                                                                  non_blocking=True)
+                            data['graph_classifier'] = graph_classifier.to(gpu_id, non_blocking=True)
 
                             batch_fwd.append((data,))
 
@@ -317,26 +308,16 @@ class GranRunner(object):
             model_file = os.path.join(self.config.save_dir, self.test_conf.test_model_name)
             load_model(model, model_file, self.device)
 
-            # graph_classifier = GraphStar(num_features=3, num_node_class=0,
-            #                              num_graph_class=2, hid=512, num_star=1,
-            #                              star_init_method="attn", link_prediction=False,
-            #                              heads=4, cross_star=False, num_layers=3,
-            #                              cross_layer=False, dropout=0.2, coef_dropout=0.2,
-            #                              residual=False,
-            #                              residual_star=False, layer_norm=True, activation=F.elu,
-            #                              layer_norm_star=True, use_e=False, num_relations=1,
-            #                              one_hot_node=False, one_hot_node_num=0,
-            #                              relation_score_function="DistMult",
-            #                              additional_self_loop_relation_type=True,
-            #                              additional_node_to_star_relation_type=True)
-            # graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
+            # create graph classifier
+            graph_classifier = GraphSAGE(3, 2, 3, 32, 'add')
+            graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
 
             if self.use_gpu:
                 model = nn.DataParallel(model, device_ids=self.gpus).to(self.device)
-                # graph_classifier = graph_classifier.to(self.device)
+                graph_classifier = graph_classifier.to(self.device)
 
             model.eval()
-            # graph_classifier.eval()
+            graph_classifier.eval()
 
             ### Generate Graphs
             A_pred = []
