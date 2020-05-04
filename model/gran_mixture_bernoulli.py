@@ -6,7 +6,6 @@ import torch.nn.functional as F
 import numpy as np
 import networkx as nx
 
-
 EPS = np.finfo(np.float32).eps
 
 __all__ = ['GRANMixtureBernoulli']
@@ -212,6 +211,15 @@ class GRANMixtureBernoulli(nn.Module):
         self.correct_preds = 0
         self.preds = 0
 
+        # Node prediction
+        self.node_label_predictor = nn.Sequential(
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(self.hidden_dim, self.config.dataset.num_node_label))
+        self.node_label_loss = nn.CrossEntropyLoss()
+        self.count = 0
     def _inference(self,
                    A_pad=None,
                    edges=None,
@@ -278,7 +286,9 @@ class GRANMixtureBernoulli(nn.Module):
         log_theta = log_theta.view(-1, self.num_mix_component)  # B * CN(N-1)/2 * K
         log_alpha = log_alpha.view(-1, self.num_mix_component)  # B * CN(N-1)/2 * K
 
-        return log_theta, log_alpha
+        log_label = self.node_label_predictor(node_state)
+
+        return log_theta, log_alpha, log_label
 
     def _sampling(self, B, inject_graph_label=False, class_label=None):
         """ generate adj in row-wise auto-regressive fashion """
@@ -524,7 +534,7 @@ class GRANMixtureBernoulli(nn.Module):
             B, _, N, _ = A_pad.shape
 
             ### compute adj loss
-            log_theta, log_alpha = self._inference(
+            log_theta, log_alpha, log_label = self._inference(
                 A_pad=A_pad,
                 edges=edges,
                 node_idx_gnn=node_idx_gnn,
@@ -537,50 +547,60 @@ class GRANMixtureBernoulli(nn.Module):
                                               self.adj_loss_func, subgraph_idx)
             adj_loss = adj_loss * float(self.num_canonical_order)
 
-            graph_label = graph_label.long()
+            n_nodes = log_label.shape[0]
+            node_label_loss = self.node_label_loss(log_label, node_label.view(-1)[:n_nodes])
+            node_label_predictions = torch.argmax(log_label, dim=1)
+            correct = (node_label_predictions == node_label.view(-1)[:n_nodes]).sum().item()
+
+            self.count += 1
+            if self.count % 20 == 0:
+                print("Acc: %s" % (correct / n_nodes))
+                _, counts = torch.unique(node_label_predictions, return_counts=True)
+                print(counts)
+            # graph_label = graph_label.long()
 
             ############ We can create an extra block like so #####################
-            new_elements = (att_idx == 1).nonzero().squeeze()
-            iis = node_idx_feat[new_elements - 1].cpu().data.numpy()
+            # new_elements = (att_idx == 1).nonzero().squeeze()
+            # iis = node_idx_feat[new_elements - 1].cpu().data.numpy()
+            #
+            # graph_label_num = graph_label.cpu().data.numpy()[0]
+            #
+            # gamma = 0.9
+            # loss = torch.zeros((1,)).to(self.device)
+            # count = 0
+            # for i in range(iis - 1, iis, 10):
+            #     count += 1
+            #     i_tensor = torch.tensor([i]).long()
+            #     generated_A = self.generate_one_block(A_pad[:, 0], i, inject_graph_label=True,
+            #                                           class_label=graph_label)[0, :i + 1, :i + 1]
+            #
+            #     lower_part = torch.tril(generated_A, diagonal=-1)
+            #     x = torch.ones((i + 1, 3)).to(self.device)
+            #     edge_mask = (lower_part != 0).to(self.device)
+            #     edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device).long()
+            #     edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
+            #     batch = torch.zeros(i + 1).to(self.device).long()
 
-            graph_label_num = graph_label.cpu().data.numpy()[0]
+            # logits_node, logits_star, logits_lp = \
+            #     graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=None)
 
-            gamma = 0.9
-            loss = torch.zeros((1,)).to(self.device)
-            count = 0
-            for i in range(iis - 1, iis, 10):
-                count += 1
-                i_tensor = torch.tensor([i]).long()
-                generated_A = self.generate_one_block(A_pad[:, 0], i, inject_graph_label=True,
-                                                      class_label=graph_label)[0, :i + 1, :i + 1]
+            # loss = gamma * loss + graph_classifier.gc_loss(logits_star, graph_label)
 
-                lower_part = torch.tril(generated_A, diagonal=-1)
-                x = torch.ones((i + 1, 3)).to(self.device)
-                edge_mask = (lower_part != 0).to(self.device)
-                edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device).long()
-                edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
-                batch = torch.zeros(i + 1).to(self.device).long()
+            # prediction_generated = torch.argmax(F.softmax(logits_star, dim=1), dim=1).cpu().data.numpy()[0]
 
-                # logits_node, logits_star, logits_lp = \
-                #     graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=None)
-
-                # loss = gamma * loss + graph_classifier.gc_loss(logits_star, graph_label)
-
-                # prediction_generated = torch.argmax(F.softmax(logits_star, dim=1), dim=1).cpu().data.numpy()[0]
-
-                # self.preds += 1
-                # if prediction_generated == graph_label_num:
-                #     self.correct_preds += 1
-                #
-                # if self.preds % 100 == 0:
-                #     print("Classifier accuracy so far: %s" % (self.correct_preds / self.preds))
+            # self.preds += 1
+            # if prediction_generated == graph_label_num:
+            #     self.correct_preds += 1
+            #
+            # if self.preds % 100 == 0:
+            #     print("Classifier accuracy so far: %s" % (self.correct_preds / self.preds))
 
             # print("Graph label: %d, Predicted label: %d, GC Loss: %s" % (graph_label, , loss))
             #######################################################################
 
             # adj_loss += loss
 
-            return adj_loss + loss
+            return adj_loss + node_label_loss
         else:
             # Samples batch_size graphs of maximum size
             A = self._sampling(batch_size, inject_graph_label=(graph_label is not None), class_label=graph_label)
