@@ -59,8 +59,10 @@ class GRANData(object):
 
     def _get_graph_data(self, G):
         node_degree_list = [(n, d) for n, d in G.degree()]
+        nodes = G.nodes(data=True)
 
         adj_0 = np.array(nx.to_numpy_matrix(G))
+        node_label_0 = np.array([nodes[x[0]]['label'] for x in nodes])
 
         ### Degree descent ranking
         # N.B.: largest-degree node may not be unique
@@ -68,11 +70,13 @@ class GRANData(object):
             node_degree_list, key=lambda tt: tt[1], reverse=True)
         adj_1 = np.array(
             nx.to_numpy_matrix(G, nodelist=[dd[0] for dd in degree_sequence]))
+        node_label_1 = np.array([nodes[dd[0]]['label'] for dd in degree_sequence])
 
         ### Degree ascent ranking
         degree_sequence = sorted(node_degree_list, key=lambda tt: tt[1])
         adj_2 = np.array(
             nx.to_numpy_matrix(G, nodelist=[dd[0] for dd in degree_sequence]))
+        node_label_2 = np.array([nodes[dd[0]]['label'] for dd in degree_sequence])
 
         ### BFS & DFS from largest-degree node
         CGs = [G.subgraph(c) for c in nx.connected_components(G)]
@@ -94,7 +98,10 @@ class GRANData(object):
             node_list_dfs += list(dfs_tree.nodes())
 
         adj_3 = np.array(nx.to_numpy_matrix(G, nodelist=node_list_bfs))
+        node_label_3 = np.array([nodes[x]['label'] for x in node_list_bfs])
+
         adj_4 = np.array(nx.to_numpy_matrix(G, nodelist=node_list_dfs))
+        node_label_4 = np.array([nodes[x]['label'] for x in node_list_dfs])
 
         ### k-core
         num_core = nx.core_number(G)
@@ -113,44 +120,54 @@ class GRANData(object):
             node_list += [nn for nn, dd in sort_node_tuple]
 
         adj_5 = np.array(nx.to_numpy_matrix(G, nodelist=node_list))
+        node_label_5 = np.array([nodes[x]['label'] for x in node_list])
 
         if self.num_canonical_order == 5:
             adj_list = [adj_0, adj_1, adj_3, adj_4, adj_5]
+            node_label_list = [node_label_0, node_label_1, node_label_3, node_label_4, node_label_5]
         else:
             if self.node_order == 'degree_decent':
                 adj_list = [adj_1]
+                node_label_list = [node_label_1]
             elif self.node_order == 'degree_accent':
                 adj_list = [adj_2]
+                node_label_list = [node_label_2]
             elif self.node_order == 'BFS':
                 adj_list = [adj_3]
+                node_label_list = [node_label_3]
             elif self.node_order == 'DFS':
                 adj_list = [adj_4]
+                node_label_list = [node_label_4]
             elif self.node_order == 'k_core':
                 adj_list = [adj_5]
+                node_label_list = [node_label_5]
             elif self.node_order == 'DFS+BFS':
                 adj_list = [adj_4, adj_3]
+                node_label_list = [node_label_4, node_label_3]
             elif self.node_order == 'DFS+BFS+k_core':
                 adj_list = [adj_4, adj_3, adj_5]
+                node_label_list = [node_label_4, node_label_3, node_label_5]
             elif self.node_order == 'DFS+BFS+k_core+degree_decent':
                 adj_list = [adj_4, adj_3, adj_5, adj_1]
+                node_label_list = [node_label_4, node_label_3, node_label_5, node_label_1]
             elif self.node_order == 'all':
                 adj_list = [adj_4, adj_3, adj_5, adj_1, adj_0]
+                node_label_list = [node_label_4, node_label_3, node_label_5, node_label_1, node_label_0]
             else:
                 adj_list = [adj_0]
+                node_label_list = [node_label_0]
 
         # print('number of nodes = {}'.format(adj_0.shape[0]))
 
-        return (adj_list, G.graph['label'] - 1)
+        return adj_list, node_label_list, G.graph['label'] - 1
 
     def __getitem__(self, index):
         K = self.block_size
         N = self.max_num_nodes
         S = self.stride
 
-
-
         # load graph
-        adj_list, graph_label = pickle.load(open(self.file_names[index], 'rb'))
+        adj_list, node_label_list, graph_label = pickle.load(open(self.file_names[index], 'rb'))
         num_nodes = adj_list[0].shape[0]
         num_subgraphs = int(np.floor((num_nodes - K) / S) + 1)
 
@@ -281,6 +298,7 @@ class GRANData(object):
             data['subgraph_size'] = subgraph_size
             data['num_count'] = sum(subgraph_size)
             data['graph_label'] = graph_label
+            data['node_label'] = np.stack(node_label_list, axis=0)
             data_batch += [data]
 
         end_time = time.time()
@@ -328,7 +346,7 @@ class GRANData(object):
 
             data['batch'] = torch.cat(
                 [torch.tensor([ii] * bb['num_count']).view(1, -1) for ii, bb in enumerate(batch_pass)],
-            dim=1).squeeze().long()
+                dim=1).squeeze().long()
 
             data['edges'] = torch.cat(
                 [bb['edges'] + idx_base[ii] for ii, bb in enumerate(batch_pass)],
@@ -366,7 +384,18 @@ class GRANData(object):
                 ])).long()
 
             data['graph_label'] = torch.from_numpy(
-                np.array([bb['graph_label'] for bb in batch_pass])).float()
+                np.array([bb['graph_label'] for bb in batch_pass])
+            ).float()
+
+            data['node_label'] = torch.from_numpy(
+                np.stack([
+                    np.pad(
+                        bb['node_label'], ((0, 0), (0, pad_size[ii])),
+                        'constant',
+                        constant_values=0.0) for ii, bb in enumerate(batch_pass)
+                ]
+                    , axis=0)
+            ).long()
 
             batch_data += [data]
 

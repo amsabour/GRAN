@@ -6,7 +6,6 @@ import torch.nn.functional as F
 import numpy as np
 import networkx as nx
 
-from classifier.module.graph_star import GraphStar
 
 EPS = np.finfo(np.float32).eps
 
@@ -413,7 +412,6 @@ class GRANMixtureBernoulli(nn.Module):
             assert class_label is not None
             class_representation = self.class_representation(class_label).reshape(-1, self.hidden_dim)
             node_state_in = torch.cat([node_state_in, class_representation.repeat((node_state_in.shape[0], 1))], dim=1)
-
         else:
             node_state_in = F.pad(node_state_in, [0, self.hidden_dim, 0, 0], mode='constant', value=0.)
 
@@ -515,7 +513,8 @@ class GRANMixtureBernoulli(nn.Module):
         label = input_dict['label'] if 'label' in input_dict else None
         num_nodes_pmf = input_dict['num_nodes_pmf'] if 'num_nodes_pmf' in input_dict else None
         graph_label = input_dict['graph_label'] if 'graph_label' in input_dict else None
-        graph_classifier = input_dict['graph_classifier'] if 'graph_classifier' in input_dict else None
+        node_label = input_dict['node_label'] if 'node_label' in input_dict else None
+        # graph_classifier = input_dict['graph_classifier'] if 'graph_classifier' in input_dict else None
         batch = input_dict['batch'] if 'batch' in input_dict else None
 
         N_max = self.max_num_nodes
@@ -542,7 +541,7 @@ class GRANMixtureBernoulli(nn.Module):
 
             ############ We can create an extra block like so #####################
             new_elements = (att_idx == 1).nonzero().squeeze()
-            iis = node_idx_feat[new_elements - 1].cpu().data.numpy()[0]
+            iis = node_idx_feat[new_elements - 1].cpu().data.numpy()
 
             graph_label_num = graph_label.cpu().data.numpy()[0]
 
@@ -562,19 +561,19 @@ class GRANMixtureBernoulli(nn.Module):
                 edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
                 batch = torch.zeros(i + 1).to(self.device).long()
 
-                logits_node, logits_star, logits_lp = \
-                    graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=None)
+                # logits_node, logits_star, logits_lp = \
+                #     graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=None)
 
-                loss = gamma * loss + graph_classifier.gc_loss(logits_star, graph_label)
+                # loss = gamma * loss + graph_classifier.gc_loss(logits_star, graph_label)
 
-                prediction_generated = torch.argmax(F.softmax(logits_star, dim=1), dim=1).cpu().data.numpy()[0]
+                # prediction_generated = torch.argmax(F.softmax(logits_star, dim=1), dim=1).cpu().data.numpy()[0]
 
-                self.preds += 1
-                if prediction_generated == graph_label_num:
-                    self.correct_preds += 1
-
-                if self.preds % 100 == 0:
-                    print("Classifier accuracy so far: %s" % (self.correct_preds / self.preds))
+                # self.preds += 1
+                # if prediction_generated == graph_label_num:
+                #     self.correct_preds += 1
+                #
+                # if self.preds % 100 == 0:
+                #     print("Classifier accuracy so far: %s" % (self.correct_preds / self.preds))
 
             # print("Graph label: %d, Predicted label: %d, GC Loss: %s" % (graph_label, , loss))
             #######################################################################

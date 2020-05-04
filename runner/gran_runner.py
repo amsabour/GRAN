@@ -28,10 +28,6 @@ from utils.dist_helper import compute_mmd, gaussian_emd, gaussian, emd, gaussian
 from utils.vis_helper import draw_graph_list, draw_graph_list_separate
 from utils.data_parallel import DataParallel
 
-from classifier import *
-from classifier.module import *
-from classifier.module.graph_star import GraphStar
-
 try:
     ###
     # workaround for solving the issue of multi-worker
@@ -105,7 +101,7 @@ class GranRunner(object):
         self.vis_num_row = config.test.vis_num_row
         self.is_single_plot = config.test.is_single_plot
         self.num_gpus = len(self.gpus)
-        self.is_shuffle = True # Why the hell would this be turned off?
+        self.is_shuffle = True  # Why the hell would this be turned off?
 
         assert self.use_gpu == True
 
@@ -175,24 +171,25 @@ class GranRunner(object):
         # create models
         model = eval(self.model_conf.name)(self.config)
         # create graph classifier
-        graph_classifier = GraphStar(num_features=3, num_node_class=0,
-                                     num_graph_class=2, hid=512, num_star=1,
-                                     star_init_method="attn", link_prediction=False,
-                                     heads=4, cross_star=False, num_layers=3,
-                                     cross_layer=False, dropout=0.2, coef_dropout=0.2,
-                                     residual=False,
-                                     residual_star=False, layer_norm=True, activation=F.elu,
-                                     layer_norm_star=True, use_e=False, num_relations=1,
-                                     one_hot_node=False, one_hot_node_num=0,
-                                     relation_score_function="DistMult",
-                                     additional_self_loop_relation_type=True,
-                                     additional_node_to_star_relation_type=True)
-        graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
-        graph_classifier.eval()
+        # graph_classifier = GraphStar(num_features=3, num_node_class=0,
+        #                              num_graph_class=2, hid=512, num_star=1,
+        #                              star_init_method="attn", link_prediction=False,
+        #                              heads=4, cross_star=False, num_layers=3,
+        #                              cross_layer=False, dropout=0.2, coef_dropout=0.2,
+        #                              residual=False,
+        #                              residual_star=False, layer_norm=True, activation=F.elu,
+        #                              layer_norm_star=True, use_e=False, num_relations=1,
+        #                              one_hot_node=False, one_hot_node_num=0,
+        #                              relation_score_function="DistMult",
+        #                              additional_self_loop_relation_type=True,
+        #                              additional_node_to_star_relation_type=True)
+        # graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
+        # graph_classifier.eval()
+        graph_classifier = None
 
         if self.use_gpu:
             model = DataParallel(model, device_ids=self.gpus).to(self.device)
-            graph_classifier = graph_classifier.to(self.device)
+            # graph_classifier = graph_classifier.to(self.device)
 
         # create optimizer
         params = filter(lambda p: p.requires_grad, model.parameters())
@@ -267,7 +264,8 @@ class GranRunner(object):
                             data['graph_label'] = batch_data[dd][ff]['graph_label'].pin_memory().to(gpu_id,
                                                                                                     non_blocking=True)
                             data['batch'] = batch_data[dd][ff]['batch'].pin_memory().to(gpu_id, non_blocking=True)
-                            data['graph_classifier'] = graph_classifier.to(gpu_id, non_blocking=True)
+                            data['node_label'] = batch_data[dd][ff]['node_label'].pin_memory().to(gpu_id, non_blocking=True)
+                            # data['graph_classifier'] = graph_classifier.to(gpu_id, non_blocking=True)
 
                             batch_fwd.append((data,))
 
@@ -319,26 +317,26 @@ class GranRunner(object):
             model_file = os.path.join(self.config.save_dir, self.test_conf.test_model_name)
             load_model(model, model_file, self.device)
 
-            graph_classifier = GraphStar(num_features=3, num_node_class=0,
-                                         num_graph_class=2, hid=512, num_star=1,
-                                         star_init_method="attn", link_prediction=False,
-                                         heads=4, cross_star=False, num_layers=3,
-                                         cross_layer=False, dropout=0.2, coef_dropout=0.2,
-                                         residual=False,
-                                         residual_star=False, layer_norm=True, activation=F.elu,
-                                         layer_norm_star=True, use_e=False, num_relations=1,
-                                         one_hot_node=False, one_hot_node_num=0,
-                                         relation_score_function="DistMult",
-                                         additional_self_loop_relation_type=True,
-                                         additional_node_to_star_relation_type=True)
-            graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
+            # graph_classifier = GraphStar(num_features=3, num_node_class=0,
+            #                              num_graph_class=2, hid=512, num_star=1,
+            #                              star_init_method="attn", link_prediction=False,
+            #                              heads=4, cross_star=False, num_layers=3,
+            #                              cross_layer=False, dropout=0.2, coef_dropout=0.2,
+            #                              residual=False,
+            #                              residual_star=False, layer_norm=True, activation=F.elu,
+            #                              layer_norm_star=True, use_e=False, num_relations=1,
+            #                              one_hot_node=False, one_hot_node_num=0,
+            #                              relation_score_function="DistMult",
+            #                              additional_self_loop_relation_type=True,
+            #                              additional_node_to_star_relation_type=True)
+            # graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
 
             if self.use_gpu:
                 model = nn.DataParallel(model, device_ids=self.gpus).to(self.device)
-                graph_classifier = graph_classifier.to(self.device)
+                # graph_classifier = graph_classifier.to(self.device)
 
             model.eval()
-            graph_classifier.eval()
+            # graph_classifier.eval()
 
             ### Generate Graphs
             A_pred = []
@@ -359,31 +357,31 @@ class GranRunner(object):
                     A_pred += [aa.data.cpu().numpy() for aa in A_tmp]
                     num_nodes_pred += [aa.shape[0] for aa in A_tmp]
 
-            for ii in tqdm(range(num_test_batch)):
-                with torch.no_grad():
-                    graph_label = torch.tensor([np.random.randint(0, 2)]).to('cuda').long()
-                    start_time = time.time()
-                    input_dict = {}
-                    input_dict['is_sampling'] = True
-                    input_dict['batch_size'] = self.test_conf.batch_size
-                    input_dict['num_nodes_pmf'] = self.num_nodes_pmf_train
-                    input_dict['graph_label'] = graph_label
-                    A_tmp = torch.cat(model(input_dict), dim=0).to(self.device)
-                    lower_part = torch.tril(A_tmp, diagonal=-1)
-                    x = torch.zeros((A_tmp.shape[0], 3)).to(self.device)
-                    edge_mask = (lower_part != 0).to(self.device)
-                    edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device)
-                    edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
-                    batch = torch.zeros(A_tmp.shape[0]).long().to(self.device)
-
-                    logits_node, logits_star, logits_lp = \
-                        graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=edge_attr)
-
-                    graph_acc_count += graph_classifier.gc_test(logits_star, graph_label, False)
+            # for ii in tqdm(range(num_test_batch)):
+            #     with torch.no_grad():
+            #         graph_label = torch.tensor([np.random.randint(0, 2)]).to('cuda').long()
+            #         start_time = time.time()
+            #         input_dict = {}
+            #         input_dict['is_sampling'] = True
+            #         input_dict['batch_size'] = self.test_conf.batch_size
+            #         input_dict['num_nodes_pmf'] = self.num_nodes_pmf_train
+            #         input_dict['graph_label'] = graph_label
+            #         A_tmp = torch.cat(model(input_dict), dim=0).to(self.device)
+            #         lower_part = torch.tril(A_tmp, diagonal=-1)
+            #         x = torch.zeros((A_tmp.shape[0], 3)).to(self.device)
+            #         edge_mask = (lower_part != 0).to(self.device)
+            #         edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device)
+            #         edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
+            #         batch = torch.zeros(A_tmp.shape[0]).long().to(self.device)
+            #
+            #         logits_node, logits_star, logits_lp = \
+            #             graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=edge_attr)
+            #
+            #         graph_acc_count += graph_classifier.gc_test(logits_star, graph_label, False)
 
             logger.info('Average test time per mini-batch = {}'.format(
                 np.mean(gen_run_time)))
-            logger.info('Conditional graph generation accuracy = {}'.format(graph_acc_count / num_test_batch))
+            # logger.info('Conditional graph generation accuracy = {}'.format(graph_acc_count / num_test_batch))
 
             graphs_gen = [get_graph(aa) for aa in A_pred]
 

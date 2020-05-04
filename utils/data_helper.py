@@ -96,16 +96,22 @@ def graph_load_batch(data_dir,
     path = os.path.join(data_dir, name)
     data_adj = np.loadtxt(
         os.path.join(path, '{}_A.txt'.format(name)), delimiter=',').astype(int)
+
+    data_node_att = None
     if node_attributes:
         data_node_att = np.loadtxt(
             os.path.join(path, '{}_node_attributes.txt'.format(name)),
             delimiter=',')
+
     data_node_label = np.loadtxt(
         os.path.join(path, '{}_node_labels.txt'.format(name)),
         delimiter=',').astype(int)
+
     data_graph_indicator = np.loadtxt(
         os.path.join(path, '{}_graph_indicator.txt'.format(name)),
         delimiter=',').astype(int)
+
+    data_graph_labels = None
     if graph_labels:
         data_graph_labels = np.loadtxt(
             os.path.join(path, '{}_graph_labels.txt'.format(name)),
