@@ -228,7 +228,7 @@ class GRANMixtureBernoulli(nn.Module):
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(self.hidden_dim, self.config.dataset.num_node_label))
-        self.node_label_loss = nn.CrossEntropyLoss()
+        self.node_label_loss = nn.CrossEntropyLoss(weight=torch.tensor([0.05793, 0.05854, 12.15176],device=self.device))
         self.count = 0
         self.correct = 0
 
@@ -567,6 +567,8 @@ class GRANMixtureBernoulli(nn.Module):
             node_label_predictions = torch.argmax(log_label, dim=1)
             correct = (node_label_predictions == node_label.view(-1)[:n_nodes]).sum().item()
 
+
+
             self.count += n_nodes
             self.correct += correct
 
@@ -596,6 +598,9 @@ class GRANMixtureBernoulli(nn.Module):
                 generated_A = generated_A[0, :i + 1, 0:i + 1]
                 x = label_prob[0, :i + 1]
 
+                true_x = torch.zeros_like(x)
+                true_x[list(range(true_x.shape[0])), node_label[0, 0, list(range(true_x.shape[0]))]] = 1
+
                 lower_part = torch.tril(generated_A, diagonal=-1)
 
                 edge_mask = (lower_part != 0).to(self.device)
@@ -603,7 +608,7 @@ class GRANMixtureBernoulli(nn.Module):
                 edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
                 batch = torch.zeros(i + 1).to(self.device).long()
 
-                data = Bunch(x=x, edge_index=edge_index, batch=batch, y=graph_label)
+                data = Bunch(x=true_x, edge_index=edge_index, batch=batch, y=graph_label)
 
                 output = graph_classifier(data)
 
