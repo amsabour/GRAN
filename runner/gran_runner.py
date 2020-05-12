@@ -30,6 +30,12 @@ from utils.data_parallel import DataParallel
 
 from classifier.GraphSAGE import GraphSAGE
 
+
+class Bunch:
+    def __init__(self, **kwds):
+        self.__dict__.update(kwds)
+
+
 try:
     ###
     # workaround for solving the issue of multi-worker
@@ -306,7 +312,7 @@ class GranRunner(object):
             ### load model
             model = eval(self.model_conf.name)(self.config)
             model_file = os.path.join(self.config.save_dir, self.test_conf.test_model_name)
-            load_model(model, model_file, self.device)
+            # load_model(model, model_file, self.device)
 
             # create graph classifier
             graph_classifier = GraphSAGE(3, 2, 3, 32, 'add')
@@ -326,43 +332,56 @@ class GranRunner(object):
 
             gen_run_time = []
             graph_acc_count = 0
-            for ii in tqdm(range(num_test_batch)):
-                with torch.no_grad():
-                    start_time = time.time()
-                    input_dict = {}
-                    input_dict['is_sampling'] = True
-                    input_dict['batch_size'] = self.test_conf.batch_size
-                    input_dict['num_nodes_pmf'] = self.num_nodes_pmf_train
-                    A_tmp = model(input_dict)
-                    gen_run_time += [time.time() - start_time]
-                    A_pred += [aa.data.cpu().numpy() for aa in A_tmp]
-                    num_nodes_pred += [aa.shape[0] for aa in A_tmp]
-
-            # for ii in tqdm(range(num_test_batch)):
+            # for ii in tqdm(range(1)):
             #     with torch.no_grad():
-            #         graph_label = torch.tensor([np.random.randint(0, 2)]).to('cuda').long()
             #         start_time = time.time()
             #         input_dict = {}
             #         input_dict['is_sampling'] = True
             #         input_dict['batch_size'] = self.test_conf.batch_size
             #         input_dict['num_nodes_pmf'] = self.num_nodes_pmf_train
-            #         input_dict['graph_label'] = graph_label
-            #         A_tmp = torch.cat(model(input_dict), dim=0).to(self.device)
-            #         lower_part = torch.tril(A_tmp, diagonal=-1)
-            #         x = torch.zeros((A_tmp.shape[0], 3)).to(self.device)
-            #         edge_mask = (lower_part != 0).to(self.device)
-            #         edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device)
-            #         edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
-            #         batch = torch.zeros(A_tmp.shape[0]).long().to(self.device)
-            #
-            #         logits_node, logits_star, logits_lp = \
-            #             graph_classifier(x, edge_index, batch, star=None, edge_type=None, edge_attr=edge_attr)
-            #
-            #         graph_acc_count += graph_classifier.gc_test(logits_star, graph_label, False)
+            #         A_tmp, label_tmp = model(input_dict)
+            #         gen_run_time += [time.time() - start_time]
+            #         A_pred += [aa.data.cpu().numpy() for aa in A_tmp]
+            #         num_nodes_pred += [aa.shape[0] for aa in A_tmp]
+
+            from classifier.losses import MulticlassClassificationLoss
+            classifier_loss = MulticlassClassificationLoss()
+
+            for ii in tqdm(range(num_test_batch)):
+                with torch.no_grad():
+                    graph_label = torch.tensor([np.random.randint(0, 2)]).to('cuda').long()
+                    start_time = time.time()
+                    input_dict = {}
+                    input_dict['is_sampling'] = True
+                    input_dict['batch_size'] = self.test_conf.batch_size
+                    input_dict['num_nodes_pmf'] = self.num_nodes_pmf_train
+                    input_dict['graph_label'] = graph_label
+
+                    A_tmp, label_tmp = torch.cat(model(input_dict), dim=0).to(self.device)
+                    label_tmp = label_tmp.long()
+
+                    lower_part = torch.tril(A_tmp, diagonal=-1)
+
+                    x = torch.zeros((A_tmp.shape[0], 3)).to(self.device)
+                    x[list(range(A_tmp.shape[0])), label_tmp] = 1
+
+                    edge_mask = (lower_part != 0).to(self.device)
+                    edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device)
+                    batch = torch.zeros(A_tmp.shape[0]).long().to(self.device)
+
+                    data = Bunch(x=x, edge_index=edge_index, batch=batch, y=graph_label)
+
+                    output = graph_classifier(data)
+
+                    if not isinstance(output, tuple):
+                        output = (output,)
+
+                    graph_classification_loss, graph_classification_acc = classifier_loss(data.y, *output)
+                    graph_acc_count += graph_classification_acc / 100
 
             logger.info('Average test time per mini-batch = {}'.format(
                 np.mean(gen_run_time)))
-            # logger.info('Conditional graph generation accuracy = {}'.format(graph_acc_count / num_test_batch))
+            logger.info('Conditional graph generation accuracy = {}'.format(graph_acc_count / num_test_batch))
 
             graphs_gen = [get_graph(aa) for aa in A_pred]
 

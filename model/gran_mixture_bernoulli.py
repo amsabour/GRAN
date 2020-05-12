@@ -216,8 +216,10 @@ class GRANMixtureBernoulli(nn.Module):
         # Graph class representation
         self.class_representation = nn.Embedding(2, self.embedding_dim)
         self.classifier_loss = MulticlassClassificationLoss()
-        self.correct_preds = 0
-        self.preds = 0
+        self.classification_accs = 0
+        self.classified = 0
+        self.zeros = 0
+        self.ones = 0
 
         # Node prediction
         self.node_label_predictor = nn.Sequential(
@@ -326,15 +328,15 @@ class GRANMixtureBernoulli(nn.Module):
             if jj > N_pad:
                 break
 
-            A = self.generate_one_block(A, ii, node_state=node_state, is_sym=False, sample=True,
-                                        inject_graph_label=inject_graph_label, class_label=class_label)
+            A, log_label = self.generate_one_block(A, ii, node_state=node_state, is_sym=False, sample=True,
+                                                   inject_graph_label=inject_graph_label, class_label=class_label)
 
         ### make it symmetric
         if self.is_sym:
             A = torch.tril(A, diagonal=-1)
             A = A + A.transpose(1, 2)
 
-        return A
+        return A, log_label
 
     def generate_one_block(self, A, row, node_state=None, is_sym=True, sample=False,
                            inject_graph_label=False, class_label=None):
@@ -572,8 +574,8 @@ class GRANMixtureBernoulli(nn.Module):
                 self.count /= 10
                 self.correct /= 10
 
-            if self.count % 400 <= 50:
-                print("Acc: %s" % (self.correct / self.count))
+            # if self.count % 400 <= 50:
+            #     print("Acc: %s" % (self.correct / self.count))
 
             graph_label = graph_label.long()
 
@@ -586,7 +588,7 @@ class GRANMixtureBernoulli(nn.Module):
             gamma = 0.9
             conditional_loss = torch.zeros((1,)).to(self.device)
             count = 0
-            for i in range(min(5, n_nodes - 1), n_nodes, 5):
+            for i in range(min(10, n_nodes - 1), n_nodes, 10):
                 count += 1
                 generated_A, label_prob = self.generate_one_block(A_pad[:, 0], i, inject_graph_label=True,
                                                                   class_label=graph_label)
@@ -601,13 +603,34 @@ class GRANMixtureBernoulli(nn.Module):
                 edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
                 batch = torch.zeros(i + 1).to(self.device).long()
 
-                data = Bunch(x=x, edge_index=edge_index, batch=batch, y=graph_label_num)
+                data = Bunch(x=x, edge_index=edge_index, batch=batch, y=graph_label)
 
                 output = graph_classifier(data)
 
-                # conditional_loss = gamma * conditional_loss + graph_classifier.gc_loss(logits_star, graph_label)
+                if not isinstance(output, tuple):
+                    output = (output,)
 
-                # prediction_generated = torch.argmax(F.softmax(logits_star, dim=1), dim=1).cpu().data.numpy()[0]
+                graph_classification_loss, graph_classification_acc = self.classifier_loss(data.y, *output)
+
+                this_prediction = self.classifier_loss._get_correct(*output)
+
+                if this_prediction == 0:
+                    self.zeros += 1
+                else:
+                    self.ones += 1
+
+                conditional_loss = gamma * conditional_loss + (1 - gamma) * graph_classification_loss
+
+                self.classification_accs += graph_classification_acc / 100
+                self.classified += 1
+
+                if self.classified % 500 == 30:
+                    print(self.classification_accs / self.classified)
+                    print(self.zeros, self.ones)
+
+                if self.classified > 10000:
+                    self.classified /= 100
+                    self.classification_accs /= 100
 
             # self.preds += 1
             # if prediction_generated == graph_label_num:
@@ -621,10 +644,11 @@ class GRANMixtureBernoulli(nn.Module):
 
             # adj_loss += conditional_loss
 
-            return adj_loss + node_label_loss
+            return adj_loss + node_label_loss + conditional_loss
         else:
             # Samples batch_size graphs of maximum size
-            A = self._sampling(batch_size, inject_graph_label=(graph_label is not None), class_label=graph_label)
+            A, log_label = self._sampling(batch_size, inject_graph_label=(graph_label is not None),
+                                          class_label=graph_label)
 
             # Pick the number of nodes of each graph based on the pmf provided
             num_nodes_pmf = torch.from_numpy(num_nodes_pmf).to(self.device)
@@ -635,7 +659,12 @@ class GRANMixtureBernoulli(nn.Module):
             A_list = [
                 A[ii, :num_nodes[ii], :num_nodes[ii]] for ii in range(batch_size)
             ]
-            return A_list
+
+            label_list = [
+                torch.multinomial(log_label[ii, :num_nodes[ii]], replacement=True) for ii in range(batch_size)
+            ]
+
+            return A_list, label_list
 
 
 def mixture_bernoulli_loss(label, log_theta, log_alpha, adj_loss_func,
