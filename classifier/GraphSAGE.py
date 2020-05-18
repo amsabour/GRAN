@@ -35,11 +35,12 @@ class GraphSAGE(nn.Module):
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
+        edge_weight = data.edge_weight
 
         x_all = []
 
         for i, layer in enumerate(self.layers):
-            x = layer(x, edge_index)
+            x = layer(x, edge_index, edge_weight=edge_weight)
             if self.aggregation == 'max':
                 x = torch.relu(self.fc_max(x))
             x_all.append(x)

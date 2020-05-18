@@ -1,4 +1,4 @@
-# from classifier.GraphSAGE import GraphSAGE
+from classifier.GraphSAGE import GraphSAGE
 from dataset import GRANData
 from utils.data_helper import create_graphs
 import torch
@@ -6,6 +6,7 @@ from utils.arg_helper import get_config
 from torch.utils.data import DataLoader
 from random import shuffle
 from torch.optim import Adam
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from classifier.losses import MulticlassClassificationLoss
 
 
@@ -25,39 +26,59 @@ def data_to_bunch(data):
 
     x = torch.cat(node_features, 0).cuda()
 
-    adj = data[0]['adj'][0]
-    lower_part = torch.tril(adj, diagonal=-1)
+    adj = data[0]['adj'][:, 0]
+    edges_list = []
 
-    edge_mask = (lower_part != 0).to('cuda')
-    edges = edge_mask.nonzero().transpose(0, 1).to('cuda').long()
+    counter = 0
+    for j in range(adj.shape[0]):
+        A = adj[j]
+        lower_part = torch.tril(A, diagonal=-1)
+        edge_mask = (lower_part != 0).to('cuda')
+        edges = edge_mask.nonzero().transpose(0, 1).to('cuda').long()
 
-    batch = torch.cat([torch.tensor([ii] * bb).view(1, -1) for ii, bb in enumerate(num_nodes)], dim=1).squeeze().long()
+        edges_list.append(edges + counter)
+        counter += num_nodes[j]
 
-    y = data[0]['graph_label'].cuda()
+    edges = torch.cat(edges_list, dim=1).to('cuda').long()
+
+    batch = torch.cat([torch.tensor([ii] * bb).view(1, -1) for ii, bb in enumerate(num_nodes)], dim=1).to(
+        'cuda').squeeze().long()
+
+    y = data[0]['graph_label'].long().cuda()
     num_graphs = len(node_features)
-
-    # print(torch.sum(num_nodes), batch.shape)
-    # print(num_nodes)
-    # print(batch)
 
     return Bunch(x=x, edge_index=edges, batch=batch, num_graphs=num_graphs, y=y)
 
 
-def get_accuracy(loader, model):
+def get_loss_accuracy(loader, model):
     acc = 0
+    loss = 0
     graphs = 0
-    for data in train_loader:
+    for data in loader:
         data = data_to_bunch(data)
         output = model(data)
         if not isinstance(output, tuple):
             output = (output,)
         loss, accuracy = loss_fun(data.y, *output)
 
+        number_of_ones = torch.sum(data.y).item()
+        number_of_zeros = data.num_graphs - number_of_ones
+
+        if number_of_ones == 0 or number_of_zeros == 0:
+            loss = torch.mean(loss)
+        else:
+            weight_of_zero = 1 / (2 * number_of_zeros)
+            weight_of_one = 1 / (2 * number_of_ones)
+            weights = torch.ones_like(loss) * weight_of_zero + data.y * (weight_of_one - weight_of_zero)
+
+            loss = torch.sum(loss * weights)
+
+        loss += loss * data.num_graphs
         acc += accuracy * data.num_graphs
         graphs += data.num_graphs
 
     acc /= graphs
-    return acc
+    return loss, acc
 
 
 graphs = create_graphs("PROTEINS", data_dir='data/')
@@ -75,44 +96,69 @@ config.use_gpu = config.use_gpu and torch.cuda.is_available()
 train_dataset = GRANData(config, train_graphs, tag='train')
 train_loader = DataLoader(train_dataset,
                           batch_size=32,
-                          shuffle=False,
+                          shuffle=True,
                           collate_fn=train_dataset.collate_fn,
+                          num_workers=4,
                           drop_last=False)
 
-test_dataset = GRANData(config, test_graphs, tag='test')
+test_dataset = GRANData(config, test_graphs)
 test_loader = DataLoader(test_dataset,
                          batch_size=32,
                          shuffle=True,
                          collate_fn=test_dataset.collate_fn,
+                         num_workers=4,
                          drop_last=False)
 
+model = GraphSAGE(3, 2, 3, 32, 'add').to('cuda')
+model.train()
+optimizer = Adam(model.parameters(), lr=0.01)
+scheduler = ReduceLROnPlateau(optimizer, 'min')
+
+loss_fun = MulticlassClassificationLoss(reduction='none').cuda()
+counter = 0
+
+best_test_acc = 0
+
 for i in range(1000):
+    model.train()
     for data in train_loader:
+        counter += 1
         data = data_to_bunch(data)
-        break
-    # data = train_dataset.__getitem__(0)
-    # print(data[0]['num_nodes'])
 
-# model = GraphSAGE(3, 2, 3, 32, 'add').to('cuda')
-# model.train()
-# optimizer = Adam(model.parameters(), lr=0.001)
-# loss_fun = MulticlassClassificationLoss(weight=torch.tensor([0.8086, 1.1914]).cuda())
+        optimizer.zero_grad()
+        output = model(data)
+        if not isinstance(output, tuple):
+            output = (output,)
+        loss, acc = loss_fun(data.y, *output)
 
-# for i in range(1000):
-#     # model.train()
-#     for data in train_loader:
-#         data = data_to_bunch(data)
+        number_of_ones = torch.sum(data.y).item()
+        number_of_zeros = data.num_graphs - number_of_ones
 
-# optimizer.zero_grad()
-# output = model(data)
-# if not isinstance(output, tuple):
-#     output = (output,)
-# loss, acc = loss_fun(data.y, *output)
-# loss.backward()
-# optimizer.step()
-#
-# model.eval()
-# with torch.no_grad():
-#     train_acc = get_accuracy(train_loader)
-#     test_acc = get_accuracy(test_loader)
-#     print("Epoch: %d ---- Train accuracy: %.3f, Test accuracy: %.3f" % (i + 1, train_acc, test_acc))
+        if number_of_ones == 0 or number_of_zeros == 0:
+            loss = torch.mean(loss)
+        else:
+            weight_of_zero = 1 / (2 * number_of_zeros)
+            weight_of_one = 1 / (2 * number_of_ones)
+            weights = torch.ones_like(loss) * weight_of_zero + data.y * (weight_of_one - weight_of_zero)
+
+            loss = torch.sum(loss * weights)
+
+        loss.backward()
+        optimizer.step()
+
+        if counter % 10 == 1:
+            print("Step %s: Loss is %.3f" % (counter, loss.item()))
+
+    model.eval()
+    with torch.no_grad():
+        train_loss, train_acc = get_loss_accuracy(train_loader, model)
+        test_loss, test_acc = get_loss_accuracy(test_loader, model)
+        print("Epoch: %d ---- Train accuracy: %.3f, Train loss: %.3f, Test accuracy: %.3f, Test loss: %.3f" % (
+            i + 1, train_acc, train_loss, test_acc, test_loss))
+
+        if test_acc > best_test_acc:
+            best_test_acc = test_acc
+            print("\033[92m" + "Best test accuracy updated: %s" % (test_acc.item()) + "\033[0m")
+            torch.save(model.state_dict(), 'output/PROTEINS.pkl')
+
+        scheduler.step(test_loss)

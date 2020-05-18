@@ -18,6 +18,41 @@ class Bunch:
         self.__dict__.update(kwds)
 
 
+def data_to_bunch(data):
+    num_nodes = data['num_nodes_gt']
+    node_features = []
+    node_labels = data['node_label'][:, 0]
+    for j in range(num_nodes.shape[0]):
+        node_feature = torch.zeros(num_nodes[j], 3)
+        node_feature[range(num_nodes[j]), node_labels[j][:num_nodes[j]]] = 1
+        node_features.append(node_feature)
+
+    x = torch.cat(node_features, 0).cuda()
+
+    adj = data['adj'][:, 0]
+    edges_list = []
+
+    counter = 0
+    for j in range(adj.shape[0]):
+        A = adj[j]
+        lower_part = torch.tril(A, diagonal=-1)
+        edge_mask = (lower_part != 0).to('cuda')
+        edges = edge_mask.nonzero().transpose(0, 1).to('cuda').long()
+
+        edges_list.append(edges + counter)
+        counter += num_nodes[j]
+
+    edges = torch.cat(edges_list, dim=1).to('cuda').long()
+
+    batch = torch.cat([torch.tensor([ii] * bb).view(1, -1) for ii, bb in enumerate(num_nodes)], dim=1).to(
+        'cuda').squeeze().long()
+
+    y = data['graph_label'].long().cuda()
+    num_graphs = len(node_features)
+
+    return Bunch(x=x, edge_index=edges, batch=batch, num_graphs=num_graphs, y=y)
+
+
 class GNN(nn.Module):
 
     def __init__(self,
@@ -228,7 +263,8 @@ class GRANMixtureBernoulli(nn.Module):
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(self.hidden_dim, self.config.dataset.num_node_label))
-        self.node_label_loss = nn.CrossEntropyLoss(weight=torch.tensor([0.05793, 0.05854, 12.15176],device=self.device))
+        self.node_label_loss = nn.CrossEntropyLoss(
+            weight=torch.tensor([0.05793, 0.05854, 12.15176], device=self.device))
         self.count = 0
         self.correct = 0
 
@@ -541,6 +577,7 @@ class GRANMixtureBernoulli(nn.Module):
         node_label = input_dict['node_label'] if 'node_label' in input_dict else None
         graph_classifier = input_dict['graph_classifier'] if 'graph_classifier' in input_dict else None
         batch = input_dict['batch'] if 'batch' in input_dict else None
+        num_nodes = input_dict['num_nodes_gt'] if 'num_nodes_gt' in input_dict else None
 
         N_max = self.max_num_nodes
 
@@ -567,8 +604,6 @@ class GRANMixtureBernoulli(nn.Module):
             node_label_predictions = torch.argmax(log_label, dim=1)
             correct = (node_label_predictions == node_label.view(-1)[:n_nodes]).sum().item()
 
-
-
             self.count += n_nodes
             self.correct += correct
 
@@ -585,57 +620,59 @@ class GRANMixtureBernoulli(nn.Module):
             # new_elements = (att_idx == 1).nonzero().squeeze()
             # iis = node_idx_feat[new_elements - 1].cpu().data.numpy()
             #
-            graph_label_num = graph_label.cpu().data.numpy()[0]
+            # graph_label_num = graph_label.cpu().data.numpy()[0]
+
+            generated_A, label_prob = self.generate_one_block(A_pad[:, 0], n_nodes, inject_graph_label=True,
+                                                              class_label=graph_label)
+            generated_A = generated_A[0, :n_nodes + 1, :n_nodes + 1]
+
+            x = torch.zeros(n_nodes + 1, 3).to(self.device)
+            x[list(range(n_nodes + 1)), node_label[0, 0, list(range(n_nodes + 1))]] = 1
+
+            lower_part = torch.tril(generated_A, diagonal=-1).to(self.device)
+            edge_mask = (lower_part != 0)
+            edges = edge_mask.nonzero().transpose(0, 1).long()
+
+            edge_weight = torch.ones(edges.shape[1]).to(self.device)
+            edge_weight[-n_nodes:] = generated_A[n_nodes, :n_nodes]
+
+            batch = torch.zeros(n_nodes + 1).to(self.device).long()
+
+            data = Bunch(x=x,
+                         edge_index=edges,
+                         batch=batch,
+                         y=graph_label,
+                         edge_weight=edge_weight)
 
             gamma = 0.9
-            conditional_loss = torch.zeros((1,)).to(self.device)
-            count = 0
-            for i in range(min(10, n_nodes - 1), n_nodes, 10):
-                count += 1
-                generated_A, label_prob = self.generate_one_block(A_pad[:, 0], i, inject_graph_label=True,
-                                                                  class_label=graph_label)
+            # count = 0
 
-                generated_A = generated_A[0, :i + 1, 0:i + 1]
-                x = label_prob[0, :i + 1]
+            output = graph_classifier(data)
 
-                true_x = torch.zeros_like(x)
-                true_x[list(range(true_x.shape[0])), node_label[0, 0, list(range(true_x.shape[0]))]] = 1
+            if not isinstance(output, tuple):
+                output = (output,)
 
-                lower_part = torch.tril(generated_A, diagonal=-1)
+            graph_classification_loss, graph_classification_acc = self.classifier_loss(data.y, *output)
 
-                edge_mask = (lower_part != 0).to(self.device)
-                edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device).long()
-                edge_attr = torch.masked_select(lower_part, edge_mask).to(self.device)
-                batch = torch.zeros(i + 1).to(self.device).long()
+            this_prediction = self.classifier_loss._get_correct(*output)
 
-                data = Bunch(x=true_x, edge_index=edge_index, batch=batch, y=graph_label)
+            if this_prediction == 0:
+                self.zeros += 1
+            else:
+                self.ones += 1
 
-                output = graph_classifier(data)
+            conditional_loss = graph_classification_loss * (gamma ** (num_nodes - n_nodes))
 
-                if not isinstance(output, tuple):
-                    output = (output,)
+            self.classification_accs += graph_classification_acc / 100
+            self.classified += 1
 
-                graph_classification_loss, graph_classification_acc = self.classifier_loss(data.y, *output)
+            if 29 <= self.classified % 100 < 30:
+                print(self.classification_accs / self.classified)
+                print(self.zeros, self.ones)
 
-                this_prediction = self.classifier_loss._get_correct(*output)
-
-                if this_prediction == 0:
-                    self.zeros += 1
-                else:
-                    self.ones += 1
-
-                conditional_loss = gamma * conditional_loss + (1 - gamma) * graph_classification_loss
-
-                self.classification_accs += graph_classification_acc / 100
-                self.classified += 1
-
-                if self.classified % 500 == 30:
-                    print(self.classification_accs / self.classified)
-                    print(self.zeros, self.ones)
-
-                if self.classified > 10000:
-                    self.classified /= 100
-                    self.classification_accs /= 100
+            if self.classified > 10000:
+                self.classified /= 100
+                self.classification_accs /= 100
 
             # self.preds += 1
             # if prediction_generated == graph_label_num:
