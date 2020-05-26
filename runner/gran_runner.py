@@ -149,6 +149,31 @@ class GranRunner(object):
         self.max_num_nodes = len(self.num_nodes_pmf_train)
         self.num_nodes_pmf_train = self.num_nodes_pmf_train / self.num_nodes_pmf_train.sum()
 
+        self.graphs_by_group = {}
+        for g in self.graphs:
+            label = g.graph['label'] - 1
+            if label not in self.graphs_by_group.keys():
+                self.graphs_by_group[label] = [g]
+            else:
+                self.graphs_by_group[label].append(g)
+
+        self.num_nodes_pmf_by_group = {}
+
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(nrows=1, ncols=1)
+
+        for k in self.graphs_by_group.keys():
+            pmf = np.bincount([len(gg.nodes) for gg in self.graphs_by_group[k]])
+            pmf = pmf / pmf.sum()
+            self.num_nodes_pmf_by_group[k] = pmf
+
+            ax.plot(list(range(len(pmf))), pmf)
+
+            # print(pmf)
+
+        fig.savefig('all_graph')
+        plt.close(fig)
+
         ### save split for benchmarking
         if config.dataset.is_save_split:
             base_path = os.path.join(config.dataset.data_path, 'save_split')
@@ -262,6 +287,8 @@ class GranRunner(object):
                             data['batch'] = batch_data[dd][ff]['batch'].pin_memory().to(gpu_id, non_blocking=True)
                             data['node_label'] = batch_data[dd][ff]['node_label'].pin_memory().to(gpu_id,
                                                                                                   non_blocking=True)
+                            data['num_nodes_gt'] = batch_data[dd][ff]['num_nodes_gt'].pin_memory().to(gpu_id,
+                                                                                                  non_blocking=True)
                             data['graph_classifier'] = graph_classifier.to(gpu_id, non_blocking=True)
 
                             batch_fwd.append((data,))
@@ -328,7 +355,7 @@ class GranRunner(object):
             ### Generate Graphs
             A_pred = []
             num_nodes_pred = []
-            num_test_batch = int(np.ceil(self.num_test_gen / self.test_conf.batch_size))
+            num_test_batch = 200
 
             gen_run_time = []
             graph_acc_count = 0
@@ -349,15 +376,18 @@ class GranRunner(object):
 
             for ii in tqdm(range(num_test_batch)):
                 with torch.no_grad():
-                    graph_label = torch.tensor([np.random.randint(0, 2)]).to('cuda').long()
+                    graph_label = torch.tensor([0]).to('cuda').long()
                     start_time = time.time()
                     input_dict = {}
                     input_dict['is_sampling'] = True
                     input_dict['batch_size'] = self.test_conf.batch_size
-                    input_dict['num_nodes_pmf'] = self.num_nodes_pmf_train
+                    input_dict['num_nodes_pmf'] = self.num_nodes_pmf_by_group[graph_label.item()]
                     input_dict['graph_label'] = graph_label
 
-                    A_tmp, label_tmp = torch.cat(model(input_dict), dim=0).to(self.device)
+                    A_tmp, label_tmp = model(input_dict)
+                    A_tmp = A_tmp[0]
+                    label_tmp = label_tmp[0]
+
                     label_tmp = label_tmp.long()
 
                     lower_part = torch.tril(A_tmp, diagonal=-1)
@@ -369,7 +399,7 @@ class GranRunner(object):
                     edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device)
                     batch = torch.zeros(A_tmp.shape[0]).long().to(self.device)
 
-                    data = Bunch(x=x, edge_index=edge_index, batch=batch, y=graph_label)
+                    data = Bunch(x=x, edge_index=edge_index, batch=batch, y=graph_label, edge_weight=None)
 
                     output = graph_classifier(data)
 
@@ -378,6 +408,8 @@ class GranRunner(object):
 
                     graph_classification_loss, graph_classification_acc = classifier_loss(data.y, *output)
                     graph_acc_count += graph_classification_acc / 100
+
+                    print(graph_classification_acc, graph_label)
 
             logger.info('Average test time per mini-batch = {}'.format(
                 np.mean(gen_run_time)))

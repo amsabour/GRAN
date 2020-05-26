@@ -50,7 +50,7 @@ def data_to_bunch(data):
     y = data['graph_label'].long().cuda()
     num_graphs = len(node_features)
 
-    return Bunch(x=x, edge_index=edges, batch=batch, num_graphs=num_graphs, y=y)
+    return Bunch(x=x, edge_index=edges, batch=batch, num_graphs=num_graphs, y=y, edge_weight=None)
 
 
 class GNN(nn.Module):
@@ -250,7 +250,7 @@ class GRANMixtureBernoulli(nn.Module):
 
         # Graph class representation
         self.class_representation = nn.Embedding(2, self.embedding_dim)
-        self.classifier_loss = MulticlassClassificationLoss()
+        self.classifier_loss = MulticlassClassificationLoss(weight=[0.404, 0.5956])
         self.classification_accs = 0
         self.classified = 0
         self.zeros = 0
@@ -338,7 +338,7 @@ class GRANMixtureBernoulli(nn.Module):
 
         return log_theta, log_alpha, log_label
 
-    def _sampling(self, B, inject_graph_label=False, class_label=None):
+    def _sampling(self, B, n, inject_graph_label=False, class_label=None):
         """ generate adj in row-wise auto-regressive fashion """
 
         K = self.block_size  # 1
@@ -359,7 +359,7 @@ class GRANMixtureBernoulli(nn.Module):
         ### cache node state for speed up
         node_state = torch.zeros(B, N_pad, dim_input).to(self.device)
 
-        for ii in range(0, N_pad, S):
+        for ii in range(0, n, S):
             jj = ii + K
             if jj > N_pad:
                 break
@@ -688,14 +688,16 @@ class GRANMixtureBernoulli(nn.Module):
 
             return adj_loss + node_label_loss + conditional_loss
         else:
-            # Samples batch_size graphs of maximum size
-            A, log_label = self._sampling(batch_size, inject_graph_label=(graph_label is not None),
-                                          class_label=graph_label)
 
             # Pick the number of nodes of each graph based on the pmf provided
             num_nodes_pmf = torch.from_numpy(num_nodes_pmf).to(self.device)
             num_nodes = torch.multinomial(
                 num_nodes_pmf, batch_size, replacement=True) + 1  # shape B * 1
+
+            # Samples batch_size graphs of maximum size
+            A, log_label = self._sampling(batch_size, num_nodes[0].item(),
+                                          inject_graph_label=(graph_label is not None),
+                                          class_label=graph_label)
 
             # Select only the first num_nodes vertices of the maximum size graph
             A_list = [
@@ -703,7 +705,7 @@ class GRANMixtureBernoulli(nn.Module):
             ]
 
             label_list = [
-                torch.multinomial(log_label[ii, :num_nodes[ii]], replacement=True) for ii in range(batch_size)
+                torch.multinomial(log_label[ii, :num_nodes[ii]], 1, replacement=True) for ii in range(batch_size)
             ]
 
             return A_list, label_list

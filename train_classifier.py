@@ -1,4 +1,6 @@
 from classifier.GraphSAGE import GraphSAGE
+from classifier.DiffPool import DiffPool
+
 from dataset import GRANData
 from utils.data_helper import create_graphs
 import torch
@@ -16,6 +18,14 @@ class Bunch:
 
 
 def data_to_bunch(data):
+    # for k in data[0].keys():
+    #     l = data[0][k]
+
+    #     if hasattr(l, 'shape'):
+    #         print(k, " ", l.shape)
+    #     else:
+    #         print(k, " ", l)
+
     num_nodes = data[0]['num_nodes_gt']
     node_features = []
     node_labels = data[0]['node_label'][:, 0]
@@ -40,6 +50,8 @@ def data_to_bunch(data):
         counter += num_nodes[j]
 
     edges = torch.cat(edges_list, dim=1).to('cuda').long()
+    edges_other_way = edges[[1, 0]]
+    edges = torch.cat([edges, edges_other_way], dim=1).to('cuda').long()
 
     batch = torch.cat([torch.tensor([ii] * bb).view(1, -1) for ii, bb in enumerate(num_nodes)], dim=1).to(
         'cuda').squeeze().long()
@@ -47,7 +59,22 @@ def data_to_bunch(data):
     y = data[0]['graph_label'].long().cuda()
     num_graphs = len(node_features)
 
-    return Bunch(x=x, edge_index=edges, batch=batch, num_graphs=num_graphs, y=y)
+    edges_truncated = data[0]['edges'].transpose(0, 1).to('cuda').long()
+    batch_truncated = data[0]['batch'].to('cuda').long()
+
+    truncated_node_features = []
+    for j in range(num_nodes.shape[0]):
+        truncated_size = (batch_truncated == j).sum()
+        truncated_node_feature = node_features[j][:truncated_size]
+        truncated_node_features.append(truncated_node_feature)
+
+    x_truncated = torch.cat(truncated_node_features, dim=0).cuda()
+
+    b1 = Bunch(x=x, edge_index=edges, batch=batch, num_graphs=num_graphs, y=y, edge_weight=None)
+    b2 = Bunch(x=x_truncated, edge_index=edges_truncated, batch=batch_truncated, num_graphs=num_graphs, y=y,
+               edge_weight=None)
+
+    return [b1, b2]
 
 
 def get_loss_accuracy(loader, model):
@@ -55,27 +82,28 @@ def get_loss_accuracy(loader, model):
     loss = 0
     graphs = 0
     for data in loader:
-        data = data_to_bunch(data)
-        output = model(data)
-        if not isinstance(output, tuple):
-            output = (output,)
-        loss, accuracy = loss_fun(data.y, *output)
+        datas = data_to_bunch(data)
+        for data in datas:
+            output = model(data)
+            if not isinstance(output, tuple):
+                output = (output,)
+            loss, accuracy = loss_fun(data.y, *output)
 
-        number_of_ones = torch.sum(data.y).item()
-        number_of_zeros = data.num_graphs - number_of_ones
+            number_of_ones = torch.sum(data.y).item()
+            number_of_zeros = data.num_graphs - number_of_ones
 
-        if number_of_ones == 0 or number_of_zeros == 0:
-            loss = torch.mean(loss)
-        else:
-            weight_of_zero = 1 / (2 * number_of_zeros)
-            weight_of_one = 1 / (2 * number_of_ones)
-            weights = torch.ones_like(loss) * weight_of_zero + data.y * (weight_of_one - weight_of_zero)
+            if number_of_ones == 0 or number_of_zeros == 0:
+                loss = torch.mean(loss)
+            else:
+                weight_of_zero = 1 / (2 * number_of_zeros)
+                weight_of_one = 1 / (2 * number_of_ones)
+                weights = torch.ones_like(loss) * weight_of_zero + data.y * (weight_of_one - weight_of_zero)
 
-            loss = torch.sum(loss * weights)
+                loss = torch.sum(loss * weights)
 
-        loss += loss * data.num_graphs
-        acc += accuracy * data.num_graphs
-        graphs += data.num_graphs
+            loss += loss * data.num_graphs
+            acc += accuracy * data.num_graphs
+            graphs += data.num_graphs
 
     acc /= graphs
     return loss, acc
@@ -109,42 +137,45 @@ test_loader = DataLoader(test_dataset,
                          num_workers=4,
                          drop_last=False)
 
-model = GraphSAGE(3, 2, 3, 32, 'add').to('cuda')
+# model = GraphSAGE(3, 2, 3, 32, 'add').to('cuda')
+model = DiffPool(3, 2, max_num_nodes=630).to('cuda')
 model.train()
 optimizer = Adam(model.parameters(), lr=0.01)
 scheduler = ReduceLROnPlateau(optimizer, 'min')
 
-loss_fun = MulticlassClassificationLoss(reduction='none').cuda()
+loss_fun = MulticlassClassificationLoss(weight=[0.404, 0.5956], reduction='none').cuda()
 counter = 0
 
 best_test_acc = 0
 
 for i in range(1000):
     model.train()
+
     for data in train_loader:
         counter += 1
-        data = data_to_bunch(data)
+        datas = data_to_bunch(data)
 
-        optimizer.zero_grad()
-        output = model(data)
-        if not isinstance(output, tuple):
-            output = (output,)
-        loss, acc = loss_fun(data.y, *output)
+        for data in datas:
+            optimizer.zero_grad()
+            output = model(data)
+            if not isinstance(output, tuple):
+                output = (output,)
+            loss, acc = loss_fun(data.y, *output)
 
-        number_of_ones = torch.sum(data.y).item()
-        number_of_zeros = data.num_graphs - number_of_ones
+            number_of_ones = torch.sum(data.y).item()
+            number_of_zeros = data.num_graphs - number_of_ones
 
-        if number_of_ones == 0 or number_of_zeros == 0:
-            loss = torch.mean(loss)
-        else:
-            weight_of_zero = 1 / (2 * number_of_zeros)
-            weight_of_one = 1 / (2 * number_of_ones)
-            weights = torch.ones_like(loss) * weight_of_zero + data.y * (weight_of_one - weight_of_zero)
+            if number_of_ones == 0 or number_of_zeros == 0:
+                loss = torch.mean(loss)
+            else:
+                weight_of_zero = 1 / (2 * number_of_zeros)
+                weight_of_one = 1 / (2 * number_of_ones)
+                weights = torch.ones_like(loss) * weight_of_zero + data.y * (weight_of_one - weight_of_zero)
 
-            loss = torch.sum(loss * weights)
+                loss = torch.sum(loss * weights)
 
-        loss.backward()
-        optimizer.step()
+            loss.backward()
+            optimizer.step()
 
         if counter % 10 == 1:
             print("Step %s: Loss is %.3f" % (counter, loss.item()))
