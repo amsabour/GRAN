@@ -1,5 +1,6 @@
 from classifier.GraphSAGE import GraphSAGE
 from classifier.DiffPool import DiffPool
+from classifier.DGCNN import DGCNN
 
 from dataset import GRANData
 from utils.data_helper import create_graphs
@@ -138,9 +139,10 @@ test_loader = DataLoader(test_dataset,
                          drop_last=False)
 
 # model = GraphSAGE(3, 2, 3, 32, 'add').to('cuda')
-model = DiffPool(3, 2, max_num_nodes=630).to('cuda')
+# model = DiffPool(3, 2, max_num_nodes=630).to('cuda')
+model = DGCNN(3, 2, 'PROTEINS_full').to('cuda')
 model.train()
-optimizer = Adam(model.parameters(), lr=0.01)
+optimizer = Adam(model.parameters(), lr=0.005)
 scheduler = ReduceLROnPlateau(optimizer, 'min')
 
 loss_fun = MulticlassClassificationLoss(weight=[0.404, 0.5956], reduction='none').cuda()
@@ -190,6 +192,6 @@ for i in range(1000):
         if test_acc > best_test_acc:
             best_test_acc = test_acc
             print("\033[92m" + "Best test accuracy updated: %s" % (test_acc.item()) + "\033[0m")
-            torch.save(model.state_dict(), 'output/PROTEINS.pkl')
+            torch.save(model.state_dict(), 'output/PROTEINS3.pkl')
 
         scheduler.step(test_loss)
