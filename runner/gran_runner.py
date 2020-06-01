@@ -29,6 +29,8 @@ from utils.vis_helper import draw_graph_list, draw_graph_list_separate
 from utils.data_parallel import DataParallel
 
 from classifier.GraphSAGE import GraphSAGE
+from classifier.DiffPool import DiffPool
+
 
 
 class Bunch:
