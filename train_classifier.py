@@ -1,7 +1,7 @@
 from classifier.GraphSAGE import GraphSAGE
 from classifier.DiffPool import DiffPool
 from classifier.DGCNN import DGCNN
-
+#
 from dataset import GRANData
 from utils.data_helper import create_graphs
 import torch
@@ -31,7 +31,7 @@ def data_to_bunch(data):
     node_features = []
     node_labels = data[0]['node_label'][:, 0]
     for j in range(num_nodes.shape[0]):
-        node_feature = torch.zeros(num_nodes[j], 3)
+        node_feature = torch.zeros(num_nodes[j], 37)
         node_feature[range(num_nodes[j]), node_labels[j][:num_nodes[j]]] = 1
         node_features.append(node_feature)
 
@@ -110,7 +110,7 @@ def get_loss_accuracy(loader, model):
     return loss, acc
 
 
-graphs = create_graphs("PROTEINS", data_dir='data/')
+graphs = create_graphs("NCI1", data_dir='data/')
 shuffle(graphs)
 
 num_graphs = len(graphs)
@@ -119,7 +119,7 @@ num_train = int(num_graphs * 0.8)
 train_graphs = graphs[:num_train]
 test_graphs = graphs[num_train:]
 
-config = get_config('config/gran_PROTEINS.yaml', is_test='false')
+config = get_config('config/gran_NCI1.yaml', is_test='false')
 config.use_gpu = config.use_gpu and torch.cuda.is_available()
 
 train_dataset = GRANData(config, train_graphs, tag='train')
@@ -138,9 +138,12 @@ test_loader = DataLoader(test_dataset,
                          num_workers=4,
                          drop_last=False)
 
-# model = GraphSAGE(3, 2, 3, 32, 'add').to('cuda')
-# model = DiffPool(3, 2, max_num_nodes=630).to('cuda')
-model = DGCNN(3, 2, 'PROTEINS_full').to('cuda')
+dim_features = config.dataset.num_node_label
+dim_target = 2
+
+# model = GraphSAGE(dim_features, dim_target, 3, 32, 'add').to('cuda')
+# model = DiffPool(dim_features, dim_target, max_num_nodes=630).to('cuda')
+model = DGCNN(dim_features, dim_target, 'NCI1').to('cuda')
 model.train()
 optimizer = Adam(model.parameters(), lr=0.005)
 scheduler = ReduceLROnPlateau(optimizer, 'min')
@@ -179,19 +182,19 @@ for i in range(1000):
             loss.backward()
             optimizer.step()
 
-        if counter % 10 == 1:
-            print("Step %s: Loss is %.3f" % (counter, loss.item()))
+            if counter % 10 == 1:
+                print("Step %s: Loss is %.3f" % (counter, loss.item()))
 
-    model.eval()
-    with torch.no_grad():
-        train_loss, train_acc = get_loss_accuracy(train_loader, model)
-        test_loss, test_acc = get_loss_accuracy(test_loader, model)
-        print("Epoch: %d ---- Train accuracy: %.3f, Train loss: %.3f, Test accuracy: %.3f, Test loss: %.3f" % (
-            i + 1, train_acc, train_loss, test_acc, test_loss))
+        model.eval()
+        with torch.no_grad():
+            train_loss, train_acc = get_loss_accuracy(train_loader, model)
+            test_loss, test_acc = get_loss_accuracy(test_loader, model)
+            print("Epoch: %d ---- Train accuracy: %.3f, Train loss: %.3f, Test accuracy: %.3f, Test loss: %.3f" % (
+                i + 1, train_acc, train_loss, test_acc, test_loss))
 
-        if test_acc > best_test_acc:
-            best_test_acc = test_acc
-            print("\033[92m" + "Best test accuracy updated: %s" % (test_acc.item()) + "\033[0m")
-            torch.save(model.state_dict(), 'output/PROTEINS3.pkl')
+            if test_acc > best_test_acc:
+                best_test_acc = test_acc
+                print("\033[92m" + "Best test accuracy updated: %s" % (test_acc.item()) + "\033[0m")
+                torch.save(model.state_dict(), 'output/PROTEINS3.pkl')
 
-        scheduler.step(test_loss)
+            scheduler.step(test_loss)
