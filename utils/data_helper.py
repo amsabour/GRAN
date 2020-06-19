@@ -106,6 +106,7 @@ def graph_load_batch(data_dir,
     data_node_label = np.loadtxt(
         os.path.join(path, '{}_node_labels.txt'.format(name)),
         delimiter=',').astype(int)
+    data_node_label -= np.min(data_node_label)
 
     data_graph_indicator = np.loadtxt(
         os.path.join(path, '{}_graph_indicator.txt'.format(name)),
