@@ -258,6 +258,7 @@ class GRANMixtureBernoulli(nn.Module):
         self.classified = 0
         self.zeros = 0
         self.ones = 0
+        self.fakes = 0
 
         # Node prediction
         self.node_label_predictor = nn.Sequential(
@@ -587,7 +588,9 @@ class GRANMixtureBernoulli(nn.Module):
         num_nodes_pmf = input_dict['num_nodes_pmf'] if 'num_nodes_pmf' in input_dict else None
         graph_label = input_dict['graph_label'] if 'graph_label' in input_dict else None
         node_label = input_dict['node_label'] if 'node_label' in input_dict else None
+
         graph_classifier = input_dict['graph_classifier'] if 'graph_classifier' in input_dict else None
+
         batch = input_dict['batch'] if 'batch' in input_dict else None
         num_nodes = input_dict['num_nodes_gt'] if 'num_nodes_gt' in input_dict else None
 
@@ -624,19 +627,21 @@ class GRANMixtureBernoulli(nn.Module):
             self.count += n_nodes
             self.correct += correct
 
-            if self.count >= 20000:
+            if self.count >= 10000:
                 self.count /= 10
                 self.correct /= 10
 
             # if self.count % 400 <= 50:
             #     print("Acc: %s" % (self.correct / self.count))
 
+            fake_graph_label = (torch.ones_like(graph_label) * 2).long()
+
             ############ We can create an extra block like so #####################
             generated_A, label_prob = self.generate_one_block(A_pad[:, 0], n_nodes, inject_graph_label=True,
                                                               class_label=graph_label)
             generated_A = generated_A[0, :n_nodes + 1, :n_nodes + 1]
 
-            x = torch.zeros(n_nodes + 1, 3).to(self.device)
+            x = torch.zeros(n_nodes + 1, 37).to(self.device)
             x[list(range(n_nodes + 1)), node_label[0, 0, list(range(n_nodes + 1))]] = 1
 
             lower_part = torch.tril(generated_A, diagonal=-1).to(self.device)
@@ -676,8 +681,10 @@ class GRANMixtureBernoulli(nn.Module):
 
             if this_prediction == 0:
                 self.zeros += 1
-            else:
+            elif this_prediction == 1:
                 self.ones += 1
+            else:
+                self.fakes += 1
 
             conditional_loss = graph_classification_loss * (gamma ** (num_nodes - n_nodes))
             label_loss = node_label_loss * (gamma ** (num_nodes - n_nodes))
@@ -687,7 +694,7 @@ class GRANMixtureBernoulli(nn.Module):
 
             if 29 <= self.classified % 100 < 30:
                 print(self.classification_accs / self.classified)
-                print(self.zeros, self.ones)
+                print(self.zeros, self.ones, self.fakes)
                 self.ones = 0
                 self.zeros = 0
                 self.classification_accs = 0
@@ -696,9 +703,26 @@ class GRANMixtureBernoulli(nn.Module):
             if self.classified > 10000:
                 self.classified /= 100
                 self.classification_accs /= 100
-            #######################################################################
 
-            # adj_loss += conditional_loss
+            ###### Classifier loss here ##########
+
+            # Use detach so that the gradient doesn't go back to the model
+
+            original_A = A_pad[0, 0, :n_nodes + 1, :n_nodes + 1]
+            lower_part = torch.tril(original_A, diagonal=-1).to(self.device)
+            edge_mask = (lower_part != 0)
+            edges_original = edge_mask.nonzero().transpose(0, 1).long()
+            edge_weight_original = torch.ones(edges_original.shape[1]).to(self.device)
+            batch_original = torch.ones(n_nodes + 1).to(self.device).long()
+
+            data = Bunch(x=torch.cat([x.detach(), x.detach()], 0),
+                         edge_index=torch.cat([edges.detach(), edges_original.detach()], 1),
+                         batch=torch.cat([batch.detach(), batch_original.detach()], 0),
+                         y=torch.cat([fake_graph_label.detach(), graph_label.detach()], 0),
+                         edge_weight=torch.cat([edge_weight.detach(), edge_weight_original.detach()], 0))
+
+            output = graph_classifier(data)
+            classifier_loss, _ = self.classifier_loss(data.y, *(output,))
 
             # print("Losses:", adj_loss.item(), conditional_loss.item())
 
@@ -725,7 +749,7 @@ class GRANMixtureBernoulli(nn.Module):
                 fig.savefig('label_%s.png' % len(self.label_losses))
                 plt.close(fig)
 
-            return adj_loss + conditional_loss + label_loss
+            return adj_loss + conditional_loss + label_loss, classifier_loss
         else:
 
             # Pick the number of nodes of each graph based on the pmf provided
