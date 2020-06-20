@@ -12,16 +12,14 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from classifier.losses import MulticlassClassificationLoss
 
+
 class Bunch:
     def __init__(self, **kwds):
         self.__dict__.update(kwds)
 
 
-
 config = get_config('config/gran_PROTEINS.yaml', is_test='false')
 config.use_gpu = config.use_gpu and torch.cuda.is_available()
-
-
 
 
 def data_to_bunch(data):
@@ -135,15 +133,19 @@ dim_target = 2
 # model = GraphSAGE(dim_features, dim_target, 3, 32, 'add').to('cuda')
 model = DiffPool(dim_features, dim_target, max_num_nodes=630).to('cuda')
 # model = DGCNN(dim_features, dim_target, 'PROTEINS_full').to('cuda')
+
 model.train()
-optimizer = Adam(model.parameters(), lr=0.005)
+optimizer = Adam(model.parameters(), lr=0.001)
 scheduler = ReduceLROnPlateau(optimizer, 'min')
+
 
 loss_weights = torch.tensor([0.8, 1.2]).cuda()
 loss_fun = MulticlassClassificationLoss(weight=loss_weights, reduction='none').cuda()
+
 counter = 0
 
 best_test_acc = 0
+loss = 0
 
 for i in range(1000):
     model.train()
@@ -152,9 +154,8 @@ for i in range(1000):
         counter += 1
         datas = data_to_bunch(data)
 
-        for data in datas:
+        for _data in datas:
             optimizer.zero_grad()
-
             output = model(data)
             loss, acc = loss_fun(data.y, output)
             loss = torch.mean(loss)

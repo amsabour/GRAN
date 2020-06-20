@@ -632,11 +632,6 @@ class GRANMixtureBernoulli(nn.Module):
             #     print("Acc: %s" % (self.correct / self.count))
 
             ############ We can create an extra block like so #####################
-            # new_elements = (att_idx == 1).nonzero().squeeze()
-            # iis = node_idx_feat[new_elements - 1].cpu().data.numpy()
-            #
-            # graph_label_num = graph_label.cpu().data.numpy()[0]
-
             generated_A, label_prob = self.generate_one_block(A_pad[:, 0], n_nodes, inject_graph_label=True,
                                                               class_label=graph_label)
             generated_A = generated_A[0, :n_nodes + 1, :n_nodes + 1]
@@ -701,15 +696,6 @@ class GRANMixtureBernoulli(nn.Module):
             if self.classified > 10000:
                 self.classified /= 100
                 self.classification_accs /= 100
-
-            # self.preds += 1
-            # if prediction_generated == graph_label_num:
-            #     self.correct_preds += 1
-            #
-            # if self.preds % 100 == 0:
-            #     print("Classifier accuracy so far: %s" % (self.correct_preds / self.preds))
-
-            # print("Graph label: %d, Predicted label: %d, GC Loss: %s" % (graph_label, , conditional_loss))
             #######################################################################
 
             # adj_loss += conditional_loss
@@ -738,7 +724,6 @@ class GRANMixtureBernoulli(nn.Module):
                 ax.set_title("Node label Losses")
                 fig.savefig('label_%s.png' % len(self.label_losses))
                 plt.close(fig)
-
 
             return adj_loss + conditional_loss + label_loss
         else:

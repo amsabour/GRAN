@@ -34,7 +34,6 @@ from classifier.GraphSAGE import GraphSAGE
 from classifier.DiffPool import DiffPool
 from classifier.DGCNN import DGCNN
 
-
 class Bunch:
     def __init__(self, **kwds):
         self.__dict__.update(kwds)
@@ -209,8 +208,9 @@ class GranRunner(object):
         model = eval(self.model_conf.name)(self.config)
         # create graph classifier
         graph_classifier = GraphSAGE(3, 2, 3, 32, 'add')
-        graph_classifier.load_state_dict(torch.load('output/MODEL_PROTEINS.pkl'))
-        graph_classifier.eval()
+        # graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
+        graph_classifier.train()
+        classifier_optim = optim.Adam(graph_classifier.parameters(), lr=0.001)
 
         if self.use_gpu:
             model = DataParallel(model, device_ids=self.gpus).to(self.device)
@@ -237,6 +237,7 @@ class GranRunner(object):
 
         # reset gradient
         optimizer.zero_grad()
+        classifier_optim.zero_grad()
 
         # resume training
         resume_epoch = 0
@@ -261,6 +262,7 @@ class GranRunner(object):
 
             for inner_iter in range(len(train_loader) // self.num_gpus):
                 optimizer.zero_grad()
+                classifier_optim.zero_grad()
 
                 batch_data = []
                 if self.use_gpu:
@@ -306,6 +308,7 @@ class GranRunner(object):
 
                 # clip_grad_norm_(model.parameters(), 5.0e-0)
                 optimizer.step()
+                classifier_optim.step()
                 avg_train_loss /= float(self.dataset_conf.num_fwd_pass)
 
                 # reduce
