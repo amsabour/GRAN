@@ -228,6 +228,14 @@ def create_graphs(graph_type, data_dir='data', noise=10.0, seed=1234):
             name='NCI1',
             node_attributes=False,
             graph_labels=True)
+    elif graph_type == "ErdosRenyi_0.25_0.75_50":
+        graphs = graph_load_batch(
+            data_dir,
+            min_num_nodes=0,
+            max_num_nodes=50,
+            name='ErdosRenyi_0.25_0.75_50',
+            node_attributes=False,
+            graph_labels=True)
 
     num_nodes = [gg.number_of_nodes() for gg in graphs]
     num_edges = [gg.number_of_edges() for gg in graphs]
