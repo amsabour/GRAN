@@ -34,6 +34,7 @@ from classifier.GraphSAGE import GraphSAGE
 from classifier.DiffPool import DiffPool
 from classifier.DGCNN import DGCNN
 
+
 class Bunch:
     def __init__(self, **kwds):
         self.__dict__.update(kwds)

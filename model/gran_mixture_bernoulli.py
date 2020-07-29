@@ -528,7 +528,7 @@ class GRANMixtureBernoulli(nn.Module):
             new_A[:, ii:jj, :jj] = prob[:, :jj - ii, :]
             A = new_A
 
-            # A = prob[:, :jj - ii, :]
+        # A = prob[:, :jj - ii, :]
 
         # make it symmetric
         if is_sym:
