@@ -206,8 +206,8 @@ class GranRunner(object):
         # create models
         model = eval(self.model_conf.name)(self.config)
         # create graph classifier
-        graph_classifier = GraphSAGE(3, 2, 3, 32, 'add')
-        graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
+        graph_classifier = GraphSAGE(1, 2, 3, 32, 'add')
+        graph_classifier.load_state_dict(torch.load('output/ErdosRenyi_0.25_0.75_50_3.pkl'))
         graph_classifier.eval()
 
         if self.use_gpu:

@@ -27,7 +27,7 @@ def generate_dataset(generators, size, name):
 
     dir = os.path.join("./generated_datasets", name)
     if not os.path.exists(dir):
-        os.mkdir(dir)
+        os.makedirs(dir)
 
     all_edges = np.array(all_edges)
     all_node_labels = np.array(all_node_labels)

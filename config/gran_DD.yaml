@@ -29,6 +29,7 @@ model:
   max_num_nodes: 500
   hidden_dim: 512
   embedding_dim: 512
+  class_repr_dim: 512
   num_GNN_layers: 7
   num_GNN_prop: 1
   num_canonical_order: 1

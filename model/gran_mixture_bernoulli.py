@@ -23,7 +23,7 @@ def data_to_bunch(data):
     node_features = []
     node_labels = data['node_label'][:, 0]
     for j in range(num_nodes.shape[0]):
-        node_feature = torch.zeros(num_nodes[j], 3)
+        node_feature = torch.zeros(num_nodes[j], 1)
         node_feature[range(num_nodes[j]), node_labels[j][:num_nodes[j]]] = 1
         node_features.append(node_feature)
 
@@ -236,8 +236,8 @@ class GRANMixtureBernoulli(nn.Module):
             self.embedding_dim = self.max_num_nodes
 
         self.decoder = GNN(
-            msg_dim=self.hidden_dim * 2,
-            node_state_dim=self.hidden_dim * 2,
+            msg_dim=self.hidden_dim + self.class_repr_dim,
+            node_state_dim=self.hidden_dim + self.class_repr_dim,
             edge_feat_dim=2 * self.att_edge_dim,
             num_prop=self.num_GNN_prop,
             num_layer=self.num_GNN_layers,
@@ -249,8 +249,9 @@ class GRANMixtureBernoulli(nn.Module):
             pos_weight=pos_weight, reduction='none')
 
         # Graph class representation
-        self.class_representation = nn.Embedding(2, self.embedding_dim)
-        self.classifier_loss = MulticlassClassificationLoss(weight=[0.404, 0.5956])
+        self.class_repr_dim = config.model.class_repr_dim
+        self.class_representation = nn.Embedding(2, self.class_repr_dim)
+        self.classifier_loss = MulticlassClassificationLoss()
         self.classification_accs = 0
         self.classified = 0
         self.zeros = 0
@@ -263,8 +264,7 @@ class GRANMixtureBernoulli(nn.Module):
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(self.hidden_dim, self.config.dataset.num_node_label))
-        self.node_label_loss = nn.CrossEntropyLoss(
-            weight=torch.tensor([0.05793, 0.05854, 12.15176], device=self.device))
+        self.node_label_loss = nn.CrossEntropyLoss()
         self.count = 0
         self.correct = 0
 
@@ -273,7 +273,9 @@ class GRANMixtureBernoulli(nn.Module):
                    edges=None,
                    node_idx_gnn=None,
                    node_idx_feat=None,
-                   att_idx=None):
+                   att_idx=None,
+                   inject_graph_label=False,
+                   class_label=None):
         """ generate adj in row-wise auto-regressive fashion """
 
         B, C, N_max, _ = A_pad.shape
@@ -321,7 +323,13 @@ class GRANMixtureBernoulli(nn.Module):
         # N.B.: node_feat is shared by multiple subgraphs within the same batch
         # This basically turns h_i^0 to h_i^R in the paper
         node_state_in = node_feat[node_idx_feat]
-        node_state_in = F.pad(node_state_in, [0, self.hidden_dim, 0, 0], mode='constant', value=0.)
+
+        if inject_graph_label:
+            assert class_label is not None
+            class_representation = self.class_representation(class_label).reshape(-1, self.class_repr_dim)
+            node_state_in = torch.cat([node_state_in, class_representation.repeat((node_state_in.shape[0], 1))], dim=1)
+        else:
+            node_state_in = F.pad(node_state_in, [0, self.class_repr_dim, 0, 0], mode='constant', value=0.)
 
         node_state = self.decoder(
             node_state_in, edges, edge_feat=att_edge_feat)[:, :self.hidden_dim]
@@ -468,7 +476,7 @@ class GRANMixtureBernoulli(nn.Module):
         node_state_in = node_state_in.view(-1, H)
         if inject_graph_label:
             assert class_label is not None
-            class_representation = self.class_representation(class_label).reshape(-1, self.hidden_dim)
+            class_representation = self.class_representation(class_label).reshape(-1, self.class_repr_dim)
             node_state_in = torch.cat([node_state_in, class_representation.repeat((node_state_in.shape[0], 1))], dim=1)
         else:
             node_state_in = F.pad(node_state_in, [0, self.hidden_dim, 0, 0], mode='constant', value=0.)
@@ -591,7 +599,10 @@ class GRANMixtureBernoulli(nn.Module):
                 edges=edges,
                 node_idx_gnn=node_idx_gnn,
                 node_idx_feat=node_idx_feat,
-                att_idx=att_idx)
+                att_idx=att_idx,
+                inject_graph_label=True,
+                class_label=graph_label
+            )
 
             num_edges = log_theta.shape[0]
 
@@ -626,7 +637,7 @@ class GRANMixtureBernoulli(nn.Module):
                                                               class_label=graph_label)
             generated_A = generated_A[0, :n_nodes + 1, :n_nodes + 1]
 
-            x = torch.zeros(n_nodes + 1, 3).to(self.device)
+            x = torch.zeros(n_nodes + 1, 1).to(self.device)
             x[list(range(n_nodes + 1)), node_label[0, 0, list(range(n_nodes + 1))]] = 1
 
             lower_part = torch.tril(generated_A, diagonal=-1).to(self.device)
