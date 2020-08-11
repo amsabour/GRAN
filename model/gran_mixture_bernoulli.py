@@ -197,6 +197,7 @@ class GRANMixtureBernoulli(nn.Module):
         self.device = config.device
         self.max_num_nodes = config.model.max_num_nodes
         self.hidden_dim = config.model.hidden_dim
+        self.class_repr_dim = config.model.class_repr_dim
         self.is_sym = config.model.is_sym
         self.block_size = config.model.block_size
         self.sample_stride = config.model.sample_stride
@@ -213,14 +214,14 @@ class GRANMixtureBernoulli(nn.Module):
         self.att_edge_dim = 64
 
         self.output_theta = nn.Sequential(
-            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.Linear(self.hidden_dim + self.class_repr_dim, self.hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(self.hidden_dim, self.output_dim * self.num_mix_component))
 
         self.output_alpha = nn.Sequential(
-            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.Linear(self.hidden_dim + self.class_repr_dim, self.hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(inplace=True),
@@ -249,7 +250,6 @@ class GRANMixtureBernoulli(nn.Module):
             pos_weight=pos_weight, reduction='none')
 
         # Graph class representation
-        self.class_repr_dim = config.model.class_repr_dim
         self.class_representation = nn.Embedding(2, self.class_repr_dim)
         self.classifier_loss = MulticlassClassificationLoss()
         self.classification_accs = 0
@@ -259,7 +259,7 @@ class GRANMixtureBernoulli(nn.Module):
 
         # Node prediction
         self.node_label_predictor = nn.Sequential(
-            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.Linear(self.hidden_dim + self.class_repr_dim, self.hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(inplace=True),
@@ -267,6 +267,8 @@ class GRANMixtureBernoulli(nn.Module):
         self.node_label_loss = nn.CrossEntropyLoss()
         self.count = 0
         self.correct = 0
+
+        self.conditional_losses = []
 
     def _inference(self,
                    A_pad=None,
@@ -331,8 +333,7 @@ class GRANMixtureBernoulli(nn.Module):
         else:
             node_state_in = F.pad(node_state_in, [0, self.class_repr_dim, 0, 0], mode='constant', value=0.)
 
-        node_state = self.decoder(
-            node_state_in, edges, edge_feat=att_edge_feat)[:, :self.hidden_dim]
+        node_state = self.decoder(node_state_in, edges, edge_feat=att_edge_feat)
 
         ### Pairwise predict edges
         diff = node_state[node_idx_gnn[:, 0], :] - node_state[node_idx_gnn[:, 1], :]
@@ -481,18 +482,17 @@ class GRANMixtureBernoulli(nn.Module):
         else:
             node_state_in = F.pad(node_state_in, [0, self.hidden_dim, 0, 0], mode='constant', value=0.)
 
-        node_state_out = self.decoder(
-            node_state_in, edges, edge_feat=att_edge_feat)
+        node_state_out = self.decoder(node_state_in, edges, edge_feat=att_edge_feat)
 
         node_state_out = node_state_out.view(B, jj, -1)
-        node_state_out = node_state_out[:, :, :self.hidden_dim]
+        # node_state_out = node_state_out[:, :, :self.hidden_dim]
 
         idx_row, idx_col = np.meshgrid(np.arange(ii, jj), np.arange(jj))
         idx_row = torch.from_numpy(idx_row.reshape(-1)).long().to(self.device)
         idx_col = torch.from_numpy(idx_col.reshape(-1)).long().to(self.device)
 
         diff = node_state_out[:, idx_row, :] - node_state_out[:, idx_col, :]  # B * (ii+K)K * H
-        diff = diff.view(-1, node_state.shape[2])
+        diff = diff.view(-1, diff.shape[2])
         log_theta = self.output_theta(diff)
         log_alpha = self.output_alpha(diff)
         log_label = self.node_label_predictor(node_state_out)
@@ -592,6 +592,7 @@ class GRANMixtureBernoulli(nn.Module):
         torch.autograd.set_detect_anomaly(True)
         if not is_sampling:
             B, _, N, _ = A_pad.shape
+            graph_label = graph_label.long()
 
             ### compute adj conditional_loss
             log_theta, log_alpha, log_label = self._inference(
@@ -624,8 +625,6 @@ class GRANMixtureBernoulli(nn.Module):
 
             # if self.count % 400 <= 50:
             #     print("Acc: %s" % (self.correct / self.count))
-
-            graph_label = graph_label.long()
 
             ############ We can create an extra block like so #####################
             # new_elements = (att_idx == 1).nonzero().squeeze()
@@ -680,6 +679,10 @@ class GRANMixtureBernoulli(nn.Module):
             if 29 <= self.classified % 100 < 30:
                 print(self.classification_accs / self.classified)
                 print(self.zeros, self.ones)
+                self.ones = 0
+                self.zeros = 0
+                self.classification_accs = 0
+                self.classified = 0
 
             if self.classified > 10000:
                 self.classified /= 100
@@ -697,7 +700,11 @@ class GRANMixtureBernoulli(nn.Module):
 
             # adj_loss += conditional_loss
 
-            return adj_loss + node_label_loss + conditional_loss
+            # print("Losses:", adj_loss.item(), conditional_loss.item())
+
+            self.conditional_losses.append(conditional_loss.item())
+
+            return adj_loss + conditional_loss
         else:
 
             # Pick the number of nodes of each graph based on the pmf provided

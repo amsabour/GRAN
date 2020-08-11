@@ -32,7 +32,6 @@ from classifier.GraphSAGE import GraphSAGE
 from classifier.DiffPool import DiffPool
 
 
-
 class Bunch:
     def __init__(self, **kwds):
         self.__dict__.update(kwds)
@@ -207,7 +206,7 @@ class GranRunner(object):
         model = eval(self.model_conf.name)(self.config)
         # create graph classifier
         graph_classifier = GraphSAGE(1, 2, 3, 32, 'add')
-        graph_classifier.load_state_dict(torch.load('output/ErdosRenyi_0.25_0.75_50_3.pkl'))
+        graph_classifier.load_state_dict(torch.load('output/MODEL.pkl'))
         graph_classifier.eval()
 
         if self.use_gpu:
@@ -290,7 +289,7 @@ class GranRunner(object):
                             data['node_label'] = batch_data[dd][ff]['node_label'].pin_memory().to(gpu_id,
                                                                                                   non_blocking=True)
                             data['num_nodes_gt'] = batch_data[dd][ff]['num_nodes_gt'].pin_memory().to(gpu_id,
-                                                                                                  non_blocking=True)
+                                                                                                      non_blocking=True)
                             data['graph_classifier'] = graph_classifier.to(gpu_id, non_blocking=True)
 
                             batch_fwd.append((data,))
@@ -344,8 +343,8 @@ class GranRunner(object):
             # load_model(model, model_file, self.device)
 
             # create graph classifier
-            graph_classifier = GraphSAGE(3, 2, 3, 32, 'add')
-            graph_classifier.load_state_dict(torch.load('output/PROTEINS.pkl'))
+            graph_classifier = GraphSAGE(1, 2, 3, 32, 'add')
+            graph_classifier.load_state_dict(torch.load('output/MODEL.pkl'))
 
             if self.use_gpu:
                 model = nn.DataParallel(model, device_ids=self.gpus).to(self.device)

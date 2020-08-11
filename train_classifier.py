@@ -195,6 +195,6 @@ for i in range(1000):
         if test_acc > best_test_acc:
             best_test_acc = test_acc
             print("\033[92m" + "Best test accuracy updated: %s" % (test_acc.item()) + "\033[0m")
-            torch.save(model.state_dict(), 'output/PROTEINS3.pkl')
+            torch.save(model.state_dict(), 'output/MODEL.pkl')
 
         scheduler.step(test_loss)

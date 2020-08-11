@@ -27,7 +27,7 @@ model:
   is_sym: true
   block_size: 1
   sample_stride: 1
-  max_num_nodes: 50
+  max_num_nodes: 55
   hidden_dim: 256
   embedding_dim: 256
   class_repr_dim: 128
