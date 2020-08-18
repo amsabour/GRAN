@@ -228,12 +228,12 @@ def create_graphs(graph_type, data_dir='data', noise=10.0, seed=1234):
             name='NCI1',
             node_attributes=False,
             graph_labels=True)
-    elif graph_type == "ErdosRenyi_0.25_0.75_50":
+    else:
         graphs = graph_load_batch(
             data_dir,
             min_num_nodes=0,
-            max_num_nodes=50,
-            name='ErdosRenyi_0.25_0.75_50',
+            max_num_nodes=1000,
+            name=graph_type,
             node_attributes=False,
             graph_labels=True)
 

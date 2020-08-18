@@ -6,6 +6,8 @@ import torch.nn.functional as F
 import numpy as np
 import networkx as nx
 
+import matplotlib.pyplot as plt
+
 from classifier.losses import MulticlassClassificationLoss
 
 EPS = np.finfo(np.float32).eps
@@ -269,6 +271,7 @@ class GRANMixtureBernoulli(nn.Module):
         self.correct = 0
 
         self.conditional_losses = []
+        self.adj_losses = []
 
     def _inference(self,
                    A_pad=None,
@@ -591,6 +594,7 @@ class GRANMixtureBernoulli(nn.Module):
 
         torch.autograd.set_detect_anomaly(True)
         if not is_sampling:
+
             B, _, N, _ = A_pad.shape
             graph_label = graph_label.long()
 
@@ -634,19 +638,19 @@ class GRANMixtureBernoulli(nn.Module):
 
             generated_A, label_prob = self.generate_one_block(A_pad[:, 0], n_nodes, inject_graph_label=True,
                                                               class_label=graph_label)
-            generated_A = generated_A[0, :n_nodes + 1, :n_nodes + 1]
+            generated_A = generated_A[0, :n_nodes, :n_nodes]
 
-            x = torch.zeros(n_nodes + 1, 1).to(self.device)
-            x[list(range(n_nodes + 1)), node_label[0, 0, list(range(n_nodes + 1))]] = 1
+            x = torch.zeros(n_nodes, 1).to(self.device)
+            x[list(range(n_nodes)), node_label[0, 0, list(range(n_nodes))]] = 1
 
             lower_part = torch.tril(generated_A, diagonal=-1).to(self.device)
             edge_mask = (lower_part != 0)
             edges = edge_mask.nonzero().transpose(0, 1).long()
 
             edge_weight = torch.ones(edges.shape[1]).to(self.device)
-            edge_weight[-n_nodes:] = generated_A[n_nodes, :n_nodes]
+            # edge_weight[-n_nodes:] = generated_A[n_nodes, :n_nodes]
 
-            batch = torch.zeros(n_nodes + 1).to(self.device).long()
+            batch = torch.zeros(n_nodes).to(self.device).long()
 
             data = Bunch(x=x,
                          edge_index=edges,
@@ -654,7 +658,9 @@ class GRANMixtureBernoulli(nn.Module):
                          y=graph_label,
                          edge_weight=edge_weight)
 
-            gamma = 0.9
+            # print(n_nodes, edge_weight.sum().item() / (n_nodes * (n_nodes) / 2), graph_label.item())
+
+            gamma = 0.8
             # count = 0
 
             output = graph_classifier(data)
@@ -665,6 +671,8 @@ class GRANMixtureBernoulli(nn.Module):
             graph_classification_loss, graph_classification_acc = self.classifier_loss(data.y, *output)
 
             this_prediction = self.classifier_loss._get_correct(*output)
+
+            # print(edges.shape, n_nodes, edge_weight[-n_nodes:], this_prediction, graph_label)
 
             if this_prediction == 0:
                 self.zeros += 1
@@ -703,6 +711,20 @@ class GRANMixtureBernoulli(nn.Module):
             # print("Losses:", adj_loss.item(), conditional_loss.item())
 
             self.conditional_losses.append(conditional_loss.item())
+            self.adj_losses.append(adj_loss.item())
+
+            if len(self.conditional_losses) % 100 == 0:
+                fig, ax = plt.subplots(nrows=1, ncols=1)
+                ax.plot(self.conditional_losses)
+                ax.set_title("Conditional Losses")
+                fig.savefig('conditional_%s.png' % len(self.conditional_losses))
+                plt.close(fig)
+
+                fig, ax = plt.subplots(nrows=1, ncols=1)
+                ax.plot(self.adj_losses)
+                ax.set_title("Adjacency Losses")
+                fig.savefig('adj_%s.png' % len(self.conditional_losses))
+                plt.close(fig)
 
             return adj_loss + conditional_loss
         else:
