@@ -79,35 +79,23 @@ def data_to_bunch(data):
 
 
 def get_loss_accuracy(loader, model):
-    acc = 0
-    loss = 0
+    corrects = 0
+    total_loss = 0
     graphs = 0
     for data in loader:
         datas = data_to_bunch(data)
         for data in datas:
             output = model(data)
-            if not isinstance(output, tuple):
-                output = (output,)
-            loss, accuracy = loss_fun(data.y, *output)
 
-            number_of_ones = torch.sum(data.y).item()
-            number_of_zeros = data.num_graphs - number_of_ones
+            loss, accuracy = loss_fun(data.y, output)
+            loss = torch.mean(loss)
 
-            if number_of_ones == 0 or number_of_zeros == 0:
-                loss = torch.mean(loss)
-            else:
-                weight_of_zero = 1 / (2 * number_of_zeros)
-                weight_of_one = 1 / (2 * number_of_ones)
-                weights = torch.ones_like(loss) * weight_of_zero + data.y * (weight_of_one - weight_of_zero)
-
-                loss = torch.sum(loss * weights)
-
-            loss += loss * data.num_graphs
-            acc += accuracy * data.num_graphs
+            total_loss += loss * data.num_graphs
+            corrects += accuracy * data.num_graphs / 100
             graphs += data.num_graphs
 
-    acc /= graphs
-    return loss, acc
+    acc = corrects / graphs
+    return total_loss, acc
 
 
 graphs = create_graphs("ErdosRenyi_0.25_0.75_50", data_dir='data/')
@@ -162,22 +150,10 @@ for i in range(1000):
 
         for data in datas:
             optimizer.zero_grad()
+
             output = model(data)
-            if not isinstance(output, tuple):
-                output = (output,)
-            loss, acc = loss_fun(data.y, *output)
-
-            number_of_ones = torch.sum(data.y).item()
-            number_of_zeros = data.num_graphs - number_of_ones
-
-            if number_of_ones == 0 or number_of_zeros == 0:
-                loss = torch.mean(loss)
-            else:
-                weight_of_zero = 1 / (2 * number_of_zeros)
-                weight_of_one = 1 / (2 * number_of_ones)
-                weights = torch.ones_like(loss) * weight_of_zero + data.y * (weight_of_one - weight_of_zero)
-
-                loss = torch.sum(loss * weights)
+            loss, acc = loss_fun(data.y, output)
+            loss = torch.mean(loss)
 
             loss.backward()
             optimizer.step()

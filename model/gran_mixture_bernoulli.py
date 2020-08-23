@@ -638,19 +638,23 @@ class GRANMixtureBernoulli(nn.Module):
 
             generated_A, label_prob = self.generate_one_block(A_pad[:, 0], n_nodes, inject_graph_label=True,
                                                               class_label=graph_label)
-            generated_A = generated_A[0, :n_nodes, :n_nodes]
+            generated_A = generated_A[0, :n_nodes + 1, :n_nodes + 1]
 
-            x = torch.zeros(n_nodes, 1).to(self.device)
-            x[list(range(n_nodes)), node_label[0, 0, list(range(n_nodes))]] = 1
+            x = torch.zeros(n_nodes + 1, 3).to(self.device)
+            x[list(range(n_nodes + 1)), node_label[0, 0, list(range(n_nodes + 1))]] = 1
 
             lower_part = torch.tril(generated_A, diagonal=-1).to(self.device)
             edge_mask = (lower_part != 0)
+
             edges = edge_mask.nonzero().transpose(0, 1).long()
-
             edge_weight = torch.ones(edges.shape[1]).to(self.device)
-            # edge_weight[-n_nodes:] = generated_A[n_nodes, :n_nodes]
+            edge_weight[-n_nodes:] = generated_A[n_nodes, :n_nodes]
 
-            batch = torch.zeros(n_nodes).to(self.device).long()
+            edges_other_way = edges[[1, 0]]
+            edges = torch.cat([edges, edges_other_way], dim=-1).to(self.device)
+            edge_weight = torch.cat([edge_weight, edge_weight], dim=-1).to(self.device)
+
+            batch = torch.zeros(n_nodes + 1).to(self.device).long()
 
             data = Bunch(x=x,
                          edge_index=edges,
@@ -681,7 +685,7 @@ class GRANMixtureBernoulli(nn.Module):
 
             conditional_loss = graph_classification_loss * (gamma ** (num_nodes - n_nodes))
 
-            self.classification_accs += graph_classification_acc / 100
+            self.classification_accs += graph_classification_acc.item() / 100
             self.classified += 1
 
             if 29 <= self.classified % 100 < 30:
@@ -726,7 +730,7 @@ class GRANMixtureBernoulli(nn.Module):
                 fig.savefig('adj_%s.png' % len(self.conditional_losses))
                 plt.close(fig)
 
-            return adj_loss + conditional_loss
+            return adj_loss + conditional_loss + node_label_loss
         else:
 
             # Pick the number of nodes of each graph based on the pmf provided

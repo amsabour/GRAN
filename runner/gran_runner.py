@@ -6,6 +6,8 @@ import numpy as np
 import copy
 import pickle
 from collections import defaultdict
+
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 import concurrent.futures
 
@@ -205,8 +207,8 @@ class GranRunner(object):
         # create models
         model = eval(self.model_conf.name)(self.config)
         # create graph classifier
-        graph_classifier = GraphSAGE(1, 2, 3, 32, 'add')
-        graph_classifier.load_state_dict(torch.load('output/MODEL.pkl'))
+        graph_classifier = GraphSAGE(3, 2, 3, 32, 'add')
+        graph_classifier.load_state_dict(torch.load('output/MODEL_PROTEINS.pkl'))
         graph_classifier.eval()
 
         if self.use_gpu:
@@ -340,11 +342,11 @@ class GranRunner(object):
             ### load model
             model = eval(self.model_conf.name)(self.config)
             model_file = os.path.join(self.config.save_dir, self.test_conf.test_model_name)
-            # load_model(model, model_file, self.device)
+            load_model(model, model_file, self.device)
 
             # create graph classifier
-            graph_classifier = GraphSAGE(1, 2, 3, 32, 'add')
-            graph_classifier.load_state_dict(torch.load('output/MODEL.pkl'))
+            graph_classifier = GraphSAGE(3, 2, 3, 32, 'add')
+            graph_classifier.load_state_dict(torch.load('output/MODEL_PROTEINS.pkl'))
 
             if self.use_gpu:
                 model = nn.DataParallel(model, device_ids=self.gpus).to(self.device)
@@ -356,7 +358,7 @@ class GranRunner(object):
             ### Generate Graphs
             A_pred = []
             num_nodes_pred = []
-            num_test_batch = 200
+            num_test_batch = 10000
 
             gen_run_time = []
             graph_acc_count = 0
@@ -375,9 +377,11 @@ class GranRunner(object):
             from classifier.losses import MulticlassClassificationLoss
             classifier_loss = MulticlassClassificationLoss()
 
+            ps = []
+
             for ii in tqdm(range(num_test_batch)):
                 with torch.no_grad():
-                    graph_label = torch.tensor([0]).to('cuda').long()
+                    graph_label = torch.tensor([1]).to('cuda').long()
                     start_time = time.time()
                     input_dict = {}
                     input_dict['is_sampling'] = True
@@ -397,10 +401,16 @@ class GranRunner(object):
                     x[list(range(A_tmp.shape[0])), label_tmp] = 1
 
                     edge_mask = (lower_part != 0).to(self.device)
-                    edge_index = edge_mask.nonzero().transpose(0, 1).to(self.device)
+                    edges = edge_mask.nonzero().transpose(0, 1).to(self.device)
+                    edges_other_way = edges[[1, 0]]
+                    edges = torch.cat([edges, edges_other_way], dim=-1).to(self.device)
+
                     batch = torch.zeros(A_tmp.shape[0]).long().to(self.device)
 
-                    data = Bunch(x=x, edge_index=edge_index, batch=batch, y=graph_label, edge_weight=None)
+                    data = Bunch(x=x, edge_index=edges, batch=batch, y=graph_label, edge_weight=None)
+
+                    n_nodes = batch.shape[0]
+                    n_edges = edges.shape[1]
 
                     output = graph_classifier(data)
 
