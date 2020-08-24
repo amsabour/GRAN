@@ -253,7 +253,7 @@ class GRANMixtureBernoulli(nn.Module):
 
         # Graph class representation
         self.class_representation = nn.Embedding(2, self.class_repr_dim)
-        self.classifier_loss = MulticlassClassificationLoss()
+        self.classifier_loss = MulticlassClassificationLoss(weight=torch.tensor([0.8, 1.2]).cuda())
         self.classification_accs = 0
         self.classified = 0
         self.zeros = 0
@@ -266,12 +266,13 @@ class GRANMixtureBernoulli(nn.Module):
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(self.hidden_dim, self.config.dataset.num_node_label))
-        self.node_label_loss = nn.CrossEntropyLoss()
+        self.node_label_loss = nn.CrossEntropyLoss(weight=torch.tensor([0.1756, 0.1756, 2.6506]).cuda())
         self.count = 0
         self.correct = 0
 
         self.conditional_losses = []
         self.adj_losses = []
+        self.label_losses = []
 
     def _inference(self,
                    A_pad=None,
@@ -684,6 +685,7 @@ class GRANMixtureBernoulli(nn.Module):
                 self.ones += 1
 
             conditional_loss = graph_classification_loss * (gamma ** (num_nodes - n_nodes))
+            label_loss = node_label_loss * (gamma ** (num_nodes - n_nodes))
 
             self.classification_accs += graph_classification_acc.item() / 100
             self.classified += 1
@@ -716,6 +718,7 @@ class GRANMixtureBernoulli(nn.Module):
 
             self.conditional_losses.append(conditional_loss.item())
             self.adj_losses.append(adj_loss.item())
+            self.label_losses.append(label_loss.item())
 
             if len(self.conditional_losses) % 100 == 0:
                 fig, ax = plt.subplots(nrows=1, ncols=1)
@@ -727,10 +730,17 @@ class GRANMixtureBernoulli(nn.Module):
                 fig, ax = plt.subplots(nrows=1, ncols=1)
                 ax.plot(self.adj_losses)
                 ax.set_title("Adjacency Losses")
-                fig.savefig('adj_%s.png' % len(self.conditional_losses))
+                fig.savefig('adj_%s.png' % len(self.adj_losses))
                 plt.close(fig)
 
-            return adj_loss + conditional_loss + node_label_loss
+                fig, ax = plt.subplots(nrows=1, ncols=1)
+                ax.plot(self.label_losses)
+                ax.set_title("Node label Losses")
+                fig.savefig('label_%s.png' % len(self.label_losses))
+                plt.close(fig)
+
+
+            return adj_loss + conditional_loss + label_loss
         else:
 
             # Pick the number of nodes of each graph based on the pmf provided

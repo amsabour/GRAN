@@ -42,9 +42,9 @@ class MulticlassClassificationLoss(ClassificationLoss):
     def __init__(self, weight=None, reduction=None):
         super().__init__()
         if reduction is not None:
-            self.loss = nn.CrossEntropyLoss(weight=None, reduction=reduction)
+            self.loss = nn.CrossEntropyLoss(weight=weight, reduction=reduction)
         else:
-            self.loss = nn.CrossEntropyLoss(weight=None)
+            self.loss = nn.CrossEntropyLoss(weight=weight)
 
     def _get_correct(self, outputs):
         return torch.argmax(outputs, dim=1)

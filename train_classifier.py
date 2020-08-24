@@ -12,10 +12,16 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from classifier.losses import MulticlassClassificationLoss
 
-
 class Bunch:
     def __init__(self, **kwds):
         self.__dict__.update(kwds)
+
+
+
+config = get_config('config/gran_PROTEINS.yaml', is_test='false')
+config.use_gpu = config.use_gpu and torch.cuda.is_available()
+
+
 
 
 def data_to_bunch(data):
@@ -31,7 +37,7 @@ def data_to_bunch(data):
     node_features = []
     node_labels = data[0]['node_label'][:, 0]
     for j in range(num_nodes.shape[0]):
-        node_feature = torch.zeros(num_nodes[j], 1)
+        node_feature = torch.zeros(num_nodes[j], config.dataset.num_node_label)
         node_feature[range(num_nodes[j]), node_labels[j][:num_nodes[j]]] = 1
         node_features.append(node_feature)
 
@@ -98,7 +104,7 @@ def get_loss_accuracy(loader, model):
     return total_loss, acc
 
 
-graphs = create_graphs("ErdosRenyi_0.25_0.75_50", data_dir='data/')
+graphs = create_graphs("PROTEINS", data_dir='data/')
 shuffle(graphs)
 
 num_graphs = len(graphs)
@@ -106,9 +112,6 @@ num_train = int(num_graphs * 0.8)
 
 train_graphs = graphs[:num_train]
 test_graphs = graphs[num_train:]
-
-config = get_config('config/gran_ErdosRenyi_0.25_0.75_50.yaml', is_test='false')
-config.use_gpu = config.use_gpu and torch.cuda.is_available()
 
 train_dataset = GRANData(config, train_graphs, tag='train')
 train_loader = DataLoader(train_dataset,
@@ -129,14 +132,15 @@ test_loader = DataLoader(test_dataset,
 dim_features = config.dataset.num_node_label
 dim_target = 2
 
-model = GraphSAGE(dim_features, dim_target, 3, 32, 'add').to('cuda')
-# model = DiffPool(dim_features, dim_target, max_num_nodes=630).to('cuda')
-# model = DGCNN(dim_features, dim_target, 'NCI1').to('cuda')
+# model = GraphSAGE(dim_features, dim_target, 3, 32, 'add').to('cuda')
+model = DiffPool(dim_features, dim_target, max_num_nodes=630).to('cuda')
+# model = DGCNN(dim_features, dim_target, 'PROTEINS_full').to('cuda')
 model.train()
 optimizer = Adam(model.parameters(), lr=0.005)
 scheduler = ReduceLROnPlateau(optimizer, 'min')
 
-loss_fun = MulticlassClassificationLoss(weight=[0.5, 0.5], reduction='none').cuda()
+loss_weights = torch.tensor([0.8, 1.2]).cuda()
+loss_fun = MulticlassClassificationLoss(weight=loss_weights, reduction='none').cuda()
 counter = 0
 
 best_test_acc = 0
@@ -171,6 +175,6 @@ for i in range(1000):
         if test_acc > best_test_acc:
             best_test_acc = test_acc
             print("\033[92m" + "Best test accuracy updated: %s" % (test_acc.item()) + "\033[0m")
-            torch.save(model.state_dict(), 'output/MODEL.pkl')
+            torch.save(model.state_dict(), 'output/MODEL_PROTEINS_DIFFPOOL.pkl')
 
         scheduler.step(test_loss)

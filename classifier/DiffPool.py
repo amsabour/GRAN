@@ -147,4 +147,4 @@ class DiffPool(nn.Module):
         x = torch.cat(x_all, dim=1)  # shape (batch, feature_size x diffpool layers)
         x = F.relu(self.lin1(x))
         x = self.lin2(x)
-        return x, l_total, e_total
+        return x

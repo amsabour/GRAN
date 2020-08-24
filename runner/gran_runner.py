@@ -32,6 +32,7 @@ from utils.data_parallel import DataParallel
 
 from classifier.GraphSAGE import GraphSAGE
 from classifier.DiffPool import DiffPool
+from classifier.DGCNN import DGCNN
 
 
 class Bunch:
@@ -346,6 +347,8 @@ class GranRunner(object):
 
             # create graph classifier
             graph_classifier = GraphSAGE(3, 2, 3, 32, 'add')
+            # graph_classifier = DiffPool(3, 2, max_num_nodes=630)
+            # graph_classifier = DGCNN(3, 2, 'PROTEINS_full')
             graph_classifier.load_state_dict(torch.load('output/MODEL_PROTEINS.pkl'))
 
             if self.use_gpu:
@@ -358,7 +361,7 @@ class GranRunner(object):
             ### Generate Graphs
             A_pred = []
             num_nodes_pred = []
-            num_test_batch = 10000
+            num_test_batch = 5000
 
             gen_run_time = []
             graph_acc_count = 0
@@ -379,9 +382,13 @@ class GranRunner(object):
 
             ps = []
 
-            for ii in tqdm(range(num_test_batch)):
+            acc_count_by_label = {0: 0, 1: 0}
+
+            graph_acc_count = 0
+            for ii in tqdm(range(2 * num_test_batch)):
                 with torch.no_grad():
-                    graph_label = torch.tensor([1]).to('cuda').long()
+                    label = ii % 2
+                    graph_label = torch.tensor([label]).to('cuda').long()
                     start_time = time.time()
                     input_dict = {}
                     input_dict['is_sampling'] = True
@@ -420,11 +427,21 @@ class GranRunner(object):
                     graph_classification_loss, graph_classification_acc = classifier_loss(data.y, *output)
                     graph_acc_count += graph_classification_acc / 100
 
+                    acc_count_by_label[label] += graph_classification_acc / 100
+
                     print(graph_classification_acc, graph_label)
+
+                    if ii % 100 == 99:
+                        n_graphs_each = (ii + 1) / 2
+                        print("\033[92m" +
+                              "Class 0: %.3f ----  Class 1: %.3f" % (acc_count_by_label[0] / n_graphs_each, acc_count_by_label[1] / n_graphs_each) +
+                              "\033[0m")
 
             logger.info('Average test time per mini-batch = {}'.format(
                 np.mean(gen_run_time)))
-            logger.info('Conditional graph generation accuracy = {}'.format(graph_acc_count / num_test_batch))
+            for label in [0, 1]:
+                graph_acc_count = acc_count_by_label[label]
+                logger.info('Class %s: ' % (label) + 'Conditional graph generation accuracy = {}'.format(graph_acc_count / num_test_batch))
 
             graphs_gen = [get_graph(aa) for aa in A_pred]
 
