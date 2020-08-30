@@ -20,7 +20,7 @@ dataset:
   is_save_split: false
   is_sample_subgraph: true # set to true if you want to sample subgraphs
   is_overwrite_precompute: false
-  num_node_label: 37
+  num_node_label: 3
 model:
   name: GRANMixtureBernoulli
   num_mix_component: 20

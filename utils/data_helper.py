@@ -228,6 +228,10 @@ def create_graphs(graph_type, data_dir='data', noise=10.0, seed=1234):
             name='NCI1',
             node_attributes=False,
             graph_labels=True)
+
+        graphs = [g for g in graphs if max([j for i, j in g.nodes(data='label')]) < 3]
+        print(len(graphs))
+
     else:
         graphs = graph_load_batch(
             data_dir,
