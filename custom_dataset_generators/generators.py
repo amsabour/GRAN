@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import networkx as nx
 from tqdm import tqdm
 
 
@@ -75,6 +76,105 @@ class ErdosRenyiGenerator(GraphGenerator):
         nodes_labels = np.array(nodes_labels)
 
         return self.n, edges, nodes_labels
+
+
+class BarabasiAlbert(GraphGenerator):
+    def __init__(self, n, m):
+        super(BarabasiAlbert, self).__init__()
+        self.n = n
+        self.m = m
+
+    def generate_graph(self):
+        graph = nx.generators.barabasi_albert_graph(self.n, self.m)
+
+        n = self.n
+        edges = np.array(graph.edges)
+        node_labels = np.array([0 for _ in range(self.n)])
+
+        return n, edges, node_labels
+
+
+class RandomRegular(GraphGenerator):
+    def __init__(self, n, d):
+        super(RandomRegular, self).__init__()
+        self.n = n
+        self.d = d
+
+    def generate_graph(self):
+        graph = nx.generators.random_regular_graph(self.d, self.n)
+
+        n = self.n
+        edges = np.array(graph.edges)
+        node_labels = np.array([0 for _ in range(self.n)])
+
+        return n, edges, node_labels
+
+
+class DualBarabasiAlbert(GraphGenerator):
+    def __init__(self, n, m1, m2, p):
+        super(DualBarabasiAlbert, self).__init__()
+        self.n = n
+        self.m1 = m1
+        self.m2 = m2
+        self.p = p
+
+    def generate_graph(self):
+        graph = nx.generators.dual_barabasi_albert_graph(self.n, self.m1, self.m2, self.p)
+
+        n = self.n
+        edges = np.array(graph.edges)
+        node_labels = np.array([0 for _ in range(self.n)])
+
+        return n, edges, node_labels
+
+
+class WattsStrogatz(GraphGenerator):
+    def __init__(self, n, k, p):
+        super(WattsStrogatz, self).__init__()
+        self.n = n
+        self.k = k
+        self.p = p
+
+    def generate_graph(self):
+        graph = nx.generators.watts_strogatz_graph(self.n, self.k, self.p)
+
+        n = self.n
+        edges = np.array(graph.edges)
+        node_labels = np.array([0 for _ in range(self.n)])
+
+        return n, edges, node_labels
+
+
+class RandomLobster(GraphGenerator):
+    def __init__(self, n, p1, p2):
+        super(RandomLobster, self).__init__()
+        self.n = n
+        self.p1 = p1
+        self.p2 = p2
+
+    def generate_graph(self):
+        graph = nx.generators.random_lobster(self.n, self.p1, self.p2)
+
+        n = self.n
+        edges = np.array(graph.edges)
+        node_labels = np.array([0 for _ in range(self.n)])
+
+        return n, edges, node_labels
+
+
+class RandomTree(GraphGenerator):
+    def __init__(self, n):
+        super(RandomTree, self).__init__()
+        self.n = n
+
+    def generate_graph(self):
+        graph = nx.generators.random_tree(self.n)
+
+        n = self.n
+        edges = np.array(graph.edges)
+        node_labels = np.array([0 for _ in range(self.n)])
+
+        return n, edges, node_labels
 
 
 if __name__ == "__main__":
