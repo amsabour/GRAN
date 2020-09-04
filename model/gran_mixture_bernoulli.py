@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 
 from classifier.losses import MulticlassClassificationLoss
 
+from bsn.activations import StochasticBinaryActivation
+
 EPS = np.finfo(np.float32).eps
 
 __all__ = ['GRANMixtureBernoulli']
@@ -273,6 +275,9 @@ class GRANMixtureBernoulli(nn.Module):
         self.conditional_losses = []
         self.adj_losses = []
         self.label_losses = []
+
+        # Binary Stochastic Activation
+        self.activator = StochasticBinaryActivation()
 
     def _inference(self,
                    A_pad=None,
@@ -738,7 +743,6 @@ class GRANMixtureBernoulli(nn.Module):
                 ax.set_title("Node label Losses")
                 fig.savefig('label_%s.png' % len(self.label_losses))
                 plt.close(fig)
-
 
             return adj_loss + conditional_loss + label_loss
         else:
