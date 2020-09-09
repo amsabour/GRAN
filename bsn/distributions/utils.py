@@ -3,7 +3,6 @@ from numbers import Number
 import torch
 from torch.autograd import Variable
 
-# TODO Remove this once torch.digamma is implemented.
 try:
     from torch import digamma
 except ImportError:

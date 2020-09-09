@@ -2,8 +2,8 @@ from numbers import Number
 
 import torch
 from torch.autograd import Variable
-from distribution import Distribution
-from utils import broadcast_all
+from .distribution import Distribution
+from .utils import broadcast_all
 
 class Round(Distribution):
     has_enumerate_support = True

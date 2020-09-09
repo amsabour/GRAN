@@ -517,7 +517,11 @@ class GRANMixtureBernoulli(nn.Module):
 
         prob = []
         for bb in range(B):
-            prob += [torch.sigmoid(log_theta[bb, :, :, alpha[bb]])]
+            if sample:
+                prob += [torch.sigmoid(log_theta[bb, :, :, alpha[bb]])]
+            else:
+                # Use Binary Stochastic Neuron to get 0/1 outputs
+                prob += [self.activator((log_theta[bb, :, :, alpha[bb]]), 1.0)]
 
         prob = torch.stack(prob, dim=0)
 
@@ -642,31 +646,31 @@ class GRANMixtureBernoulli(nn.Module):
             #
             # graph_label_num = graph_label.cpu().data.numpy()[0]
 
-            generated_A, label_prob = self.generate_one_block(A_pad[:, 0], n_nodes, inject_graph_label=True,
-                                                              class_label=graph_label)
-            generated_A = generated_A[0, :n_nodes + 1, :n_nodes + 1]
+            generation_steps = 3
+            generated_A = A_pad[:, 0]
+            generated_graph_size = n_nodes + generation_steps
 
-            x = torch.zeros(n_nodes + 1, 3).to(self.device)
-            x[list(range(n_nodes + 1)), node_label[0, 0, list(range(n_nodes + 1))]] = 1
+            for i in range(n_nodes, generated_graph_size):
+                generated_A, label_prob = self.generate_one_block(generated_A, i, inject_graph_label=True,
+                                                                  class_label=graph_label)
+            generated_A = generated_A[0, :generated_graph_size, :generated_graph_size]
+
+            x = torch.zeros(generated_graph_size, 3).to(self.device)
+            x[list(range(generated_graph_size)), node_label[0, 0, list(range(generated_graph_size))]] = 1
 
             lower_part = torch.tril(generated_A, diagonal=-1).to(self.device)
             edge_mask = (lower_part != 0)
-
             edges = edge_mask.nonzero().transpose(0, 1).long()
-            edge_weight = torch.ones(edges.shape[1]).to(self.device)
-            edge_weight[-n_nodes:] = generated_A[n_nodes, :n_nodes]
-
             edges_other_way = edges[[1, 0]]
             edges = torch.cat([edges, edges_other_way], dim=-1).to(self.device)
-            edge_weight = torch.cat([edge_weight, edge_weight], dim=-1).to(self.device)
 
-            batch = torch.zeros(n_nodes + 1).to(self.device).long()
+            batch = torch.zeros(generated_graph_size).to(self.device).long()
 
             data = Bunch(x=x,
                          edge_index=edges,
                          batch=batch,
                          y=graph_label,
-                         edge_weight=edge_weight)
+                         edge_weight=None)
 
             # print(n_nodes, edge_weight.sum().item() / (n_nodes * (n_nodes) / 2), graph_label.item())
 
@@ -744,7 +748,7 @@ class GRANMixtureBernoulli(nn.Module):
                 fig.savefig('label_%s.png' % len(self.label_losses))
                 plt.close(fig)
 
-            return adj_loss + conditional_loss + label_loss
+            return adj_loss + conditional_loss
         else:
 
             # Pick the number of nodes of each graph based on the pmf provided

@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-from utils import Hardsigmoid, RoundST, BernoulliST
-from distributions import Bernoulli as BernoulliREINFORCE
-from distributions import Round as RoundREINFORCE
+from .utils import Hardsigmoid, RoundST, BernoulliST
+from .distributions import Bernoulli as BernoulliREINFORCE
+from .distributions import Round as RoundREINFORCE
 
 
 class DeterministicBinaryActivation(nn.Module):
@@ -28,6 +28,7 @@ class DeterministicBinaryActivation(nn.Module):
         if self.estimator == 'REINFORCE':
             x = x.sample()
         return x
+
 
 class StochasticBinaryActivation(nn.Module):
 

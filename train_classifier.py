@@ -132,8 +132,8 @@ test_loader = DataLoader(test_dataset,
 dim_features = config.dataset.num_node_label
 dim_target = 2
 
-# model = GraphSAGE(dim_features, dim_target, 3, 32, 'add').to('cuda')
-model = DiffPool(dim_features, dim_target, max_num_nodes=630).to('cuda')
+model = GraphSAGE(dim_features, dim_target, 3, 32, 'add').to('cuda')
+# model = DiffPool(dim_features, dim_target, max_num_nodes=630).to('cuda')
 # model = DGCNN(dim_features, dim_target, 'PROTEINS_full').to('cuda')
 model.train()
 optimizer = Adam(model.parameters(), lr=0.005)
@@ -175,6 +175,6 @@ for i in range(1000):
         if test_acc > best_test_acc:
             best_test_acc = test_acc
             print("\033[92m" + "Best test accuracy updated: %s" % (test_acc.item()) + "\033[0m")
-            torch.save(model.state_dict(), 'output/MODEL_PROTEINS_DIFFPOOL.pkl')
+            torch.save(model.state_dict(), 'output/MODEL_PROTEINS_GRAPHSAGE.pkl')
 
         scheduler.step(test_loss)
