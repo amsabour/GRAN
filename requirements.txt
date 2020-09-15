@@ -6,3 +6,5 @@ scipy
 pyyaml
 easydict
 matplotlib
+python-igraph
+powerlaw

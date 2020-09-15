@@ -163,23 +163,71 @@ class RandomLobster(GraphGenerator):
 
 
 class RandomTree(GraphGenerator):
-    def __init__(self, n):
+    def __init__(self, n=None, min_n=None, max_n=None):
         super(RandomTree, self).__init__()
         self.n = n
+        self.min_n = min_n
+        self.max_n = max_n
+
+    def get_n(self):
+        if self.n is not None:
+            return self.n
+        elif self.min_n is not None and self.max_n is not None:
+            return np.random.randint(self.min_n, self.max_n)
+        else:
+            return 0
 
     def generate_graph(self):
-        graph = nx.generators.random_tree(self.n)
+        n = self.get_n()
 
-        n = self.n
+        graph = nx.generators.random_tree(n)
+
         edges = np.array(graph.edges)
-        node_labels = np.array([0 for _ in range(self.n)])
+        node_labels = np.array([0 for _ in range(n)])
+
+        return n, edges, node_labels
+
+
+class Grid(GraphGenerator):
+    def __init__(self):
+        super(Grid, self).__init__()
+        self.i = 10
+        self.j = 10
+
+        self.max_i = 20
+        self.max_j = 20
+
+    def generate_graph(self):
+        graph = nx.grid_2d_graph(self.i, self.j)
+
+        n = self.i * self.j
+        edges_2d = list(graph.edges)
+
+        edges = []
+        for a, b in list(edges_2d):
+            a = a[0] * self.j + a[1]
+            b = b[0] * self.j + b[1]
+
+            edges.append((a, b))
+
+        edges = np.array(edges)
+
+        node_labels = np.array([0 for _ in range(n)])
+
+        self.j += 1
+        if self.j >= self.max_j:
+            self.j = 10
+
+            self.i += 1
+            if self.i >= self.max_i:
+                self.i = 10
 
         return n, edges, node_labels
 
 
 if __name__ == "__main__":
-    generator_0 = ErdosRenyiGenerator(50, 0.25)
-    generator_1 = ErdosRenyiGenerator(50, 0.75)
+    generator_0 = Grid()
+    generator_1 = RandomTree(min_n=100, max_n=400)
 
     generators = [generator_0, generator_1]
-    generate_dataset(generators, 1000, "ErdosRenyi_0.25_0.75_50")
+    generate_dataset(generators, 200, "GridVSTree")

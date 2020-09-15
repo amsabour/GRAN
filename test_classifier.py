@@ -11,6 +11,7 @@ from random import shuffle
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from classifier.losses import MulticlassClassificationLoss
+from graph_stats import compute_graph_statistics
 
 
 class Bunch:
@@ -20,6 +21,9 @@ class Bunch:
 
 config = get_config('config/gran_PROTEINS.yaml', is_test='false')
 config.use_gpu = config.use_gpu and torch.cuda.is_available()
+
+dim_features = 630
+dim_target = 2
 
 
 def data_to_bunch(data):
@@ -37,6 +41,9 @@ def data_to_bunch(data):
     for j in range(num_nodes.shape[0]):
         node_feature = torch.zeros(num_nodes[j], config.dataset.num_node_label)
         node_feature[range(num_nodes[j]), node_labels[j][:num_nodes[j]]] = 1
+
+        node_feature = torch.eye(num_nodes[j], dim_features)
+
         node_features.append(node_feature)
 
     x = torch.cat(node_features, 0).cuda()
@@ -71,6 +78,9 @@ def data_to_bunch(data):
     for j in range(num_nodes.shape[0]):
         truncated_size = (batch_truncated == j).sum()
         truncated_node_feature = node_features[j][:truncated_size]
+
+        truncated_node_feature = torch.eye(truncated_node_feature.shape[0], dim_features)
+
         truncated_node_features.append(truncated_node_feature)
 
     x_truncated = torch.cat(truncated_node_features, dim=0).cuda()
@@ -120,6 +130,42 @@ def get_loss_accuracy(loader, model):
     return total_loss, acc
 
 
+def get_stats(loader):
+    keys = ['LCC', 'cpl', 'gini', 'triangle_count', 'd']
+    acc_stats = {i: {x: 0 for x in keys} for i in [0, 1]}
+
+    counts = {i: 0 for i in [0, 1]}
+
+    for data in loader:
+        data = data_to_bunch(data)[0]
+        n = data.x.shape[0]
+        A = torch.zeros((n, n))
+        label = int(data.y[0])
+
+        counts[label] += 1
+
+        for c in range(data.edge_index.shape[1]):
+            i = data.edge_index[0, c]
+            j = data.edge_index[1, c]
+
+            A[i, j] = 1
+            A[j, i] = 1
+
+        A = A.detach().cpu().numpy()
+
+        stats = compute_graph_statistics(A)
+
+        for key in stats.keys():
+            if key in keys:
+                acc_stats[label][key] += stats[key]
+
+    for label in [0, 1]:
+        for key in acc_stats[label].keys():
+            acc_stats[label][key] /= counts[label]
+
+    return acc_stats
+
+
 graphs = create_graphs("PROTEINS", data_dir='data/')
 shuffle(graphs)
 
@@ -131,7 +177,7 @@ test_graphs = graphs[num_train:]
 
 train_dataset = GRANData(config, graphs, tag='train')
 train_loader = DataLoader(train_dataset,
-                          batch_size=32,
+                          batch_size=1,
                           shuffle=True,
                           collate_fn=train_dataset.collate_fn,
                           num_workers=4,
@@ -139,31 +185,31 @@ train_loader = DataLoader(train_dataset,
 
 test_dataset = GRANData(config, test_graphs)
 test_loader = DataLoader(test_dataset,
-                         batch_size=32,
+                         batch_size=1,
                          shuffle=True,
                          collate_fn=test_dataset.collate_fn,
                          num_workers=4,
                          drop_last=False)
 
-dim_features = config.dataset.num_node_label
-dim_target = 2
+print(get_stats(train_loader))
+print(get_stats(test_loader))
 
 # model = GraphSAGE(dim_features, dim_target, 3, 32, 'add').to('cuda')
 # model = DiffPool(dim_features, dim_target, max_num_nodes=630).to('cuda')
-model = DGCNN(dim_features, dim_target, 'PROTEINS_full').to('cuda')
-model.load_state_dict(torch.load('output/MODEL_PROTEINS_DGCNN.pkl'))
+# model = DGCNN(dim_features, dim_target, 'PROTEINS_full').to('cuda')
+# model.load_state_dict(torch.load('output/MODEL_PROTEINS_DGCNN_ALL_STRICT.pkl'))
 
-loss_weights = torch.tensor([0.8, 1.2]).cuda()
-loss_fun = MulticlassClassificationLoss(weight=loss_weights, reduction='none').cuda()
-counter = 0
+# loss_weights = torch.tensor([0.8, 1.2]).cuda()
+# loss_fun = MulticlassClassificationLoss(weight=loss_weights, reduction='none').cuda()
+# counter = 0
 
-best_test_acc = 0
+# best_test_acc = 0
 
-for i in range(3):
-    model.eval()
-    with torch.no_grad():
-        train_loss, train_acc = get_loss_accuracy(train_loader, model)
-        test_loss, test_acc = get_loss_accuracy(test_loader, model)
-        print("Epoch: %d ---- Train accuracy: %s, Train loss: %.3f, Test accuracy: %s, Test loss: %.3f" % (
-            i + 1, train_acc, train_loss, test_acc, test_loss))
+# for i in range(1):
+#     model.eval()
+#     with torch.no_grad():
+#         train_loss, train_acc = get_loss_accuracy(train_loader, model)
+#         test_loss, test_acc = get_loss_accuracy(test_loader, model)
+#         print("Epoch: %d ---- Train accuracy: %s, Train loss: %.3f, Test accuracy: %s, Test loss: %.3f" % (
+#             i + 1, train_acc, train_loss, test_acc, test_loss))
 

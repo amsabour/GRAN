@@ -21,7 +21,8 @@ class Bunch:
 config = get_config('config/gran_PROTEINS.yaml', is_test='false')
 config.use_gpu = config.use_gpu and torch.cuda.is_available()
 
-
+dim_features = 630
+dim_target = 2
 
 
 def data_to_bunch(data):
@@ -37,8 +38,11 @@ def data_to_bunch(data):
     node_features = []
     node_labels = data[0]['node_label'][:, 0]
     for j in range(num_nodes.shape[0]):
-        node_feature = torch.zeros(num_nodes[j], config.dataset.num_node_label)
-        node_feature[range(num_nodes[j]), node_labels[j][:num_nodes[j]]] = 1
+        # node_feature = torch.zeros(num_nodes[j], config.dataset.num_node_label)
+        # node_feature[range(num_nodes[j]), node_labels[j][:num_nodes[j]]] = 1
+
+        node_feature = torch.eye(num_nodes[j], dim_features)
+
         node_features.append(node_feature)
 
     x = torch.cat(node_features, 0).cuda()
@@ -73,6 +77,9 @@ def data_to_bunch(data):
     for j in range(num_nodes.shape[0]):
         truncated_size = (batch_truncated == j).sum()
         truncated_node_feature = node_features[j][:truncated_size]
+
+        truncated_node_feature = torch.eye(truncated_node_feature.shape[0], dim_features)
+
         truncated_node_features.append(truncated_node_feature)
 
     x_truncated = torch.cat(truncated_node_features, dim=0).cuda()
@@ -129,8 +136,7 @@ test_loader = DataLoader(test_dataset,
                          num_workers=4,
                          drop_last=False)
 
-dim_features = config.dataset.num_node_label
-dim_target = 2
+
 
 model = GraphSAGE(dim_features, dim_target, 3, 32, 'add').to('cuda')
 # model = DiffPool(dim_features, dim_target, max_num_nodes=630).to('cuda')
@@ -139,7 +145,7 @@ model.train()
 optimizer = Adam(model.parameters(), lr=0.005)
 scheduler = ReduceLROnPlateau(optimizer, 'min')
 
-loss_weights = torch.tensor([0.8, 1.2]).cuda()
+loss_weights = torch.tensor([0.6, 1.4]).cuda()
 loss_fun = MulticlassClassificationLoss(weight=loss_weights, reduction='none').cuda()
 counter = 0
 
@@ -175,6 +181,6 @@ for i in range(1000):
         if test_acc > best_test_acc:
             best_test_acc = test_acc
             print("\033[92m" + "Best test accuracy updated: %s" % (test_acc.item()) + "\033[0m")
-            torch.save(model.state_dict(), 'output/MODEL_PROTEINS_GRAPHSAGE.pkl')
+            torch.save(model.state_dict(), 'output/MODEL_PROTEINS_GRAPHSAGE_ALL.pkl')
 
         scheduler.step(test_loss)

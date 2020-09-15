@@ -255,7 +255,7 @@ class GRANMixtureBernoulli(nn.Module):
 
         # Graph class representation
         self.class_representation = nn.Embedding(2, self.class_repr_dim)
-        self.classifier_loss = MulticlassClassificationLoss(weight=torch.tensor([0.8, 1.2]).cuda())
+        self.classifier_loss = MulticlassClassificationLoss(weight=torch.tensor([0.6, 1.4]).cuda())
         self.classification_accs = 0
         self.classified = 0
         self.zeros = 0
@@ -521,7 +521,7 @@ class GRANMixtureBernoulli(nn.Module):
                 prob += [torch.sigmoid(log_theta[bb, :, :, alpha[bb]])]
             else:
                 # Use Binary Stochastic Neuron to get 0/1 outputs
-                prob += [self.activator((log_theta[bb, :, :, alpha[bb]]), 1.0)]
+                prob += [self.activator((log_theta[bb, :, :, alpha[bb]], 1.0))]
 
         prob = torch.stack(prob, dim=0)
 
@@ -655,8 +655,10 @@ class GRANMixtureBernoulli(nn.Module):
                                                                   class_label=graph_label)
             generated_A = generated_A[0, :generated_graph_size, :generated_graph_size]
 
-            x = torch.zeros(generated_graph_size, 3).to(self.device)
-            x[list(range(generated_graph_size)), node_label[0, 0, list(range(generated_graph_size))]] = 1
+            # x = torch.zeros(generated_graph_size, 3).to(self.device)
+            # x[list(range(generated_graph_size)), node_label[0, 0, list(range(generated_graph_size))]] = 1
+
+            x = torch.eye(generated_graph_size, 630).to(self.device)
 
             lower_part = torch.tril(generated_A, diagonal=-1).to(self.device)
             edge_mask = (lower_part != 0)
