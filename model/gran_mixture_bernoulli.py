@@ -246,7 +246,8 @@ class GRANMixtureBernoulli(nn.Module):
             edge_feat_dim=2 * self.att_edge_dim,
             num_prop=self.num_GNN_prop,
             num_layer=self.num_GNN_layers,
-            has_attention=self.has_attention)
+            has_attention=self.has_attention
+        )
 
         ### Loss functions
         pos_weight = torch.ones([1]) * self.edge_weight
